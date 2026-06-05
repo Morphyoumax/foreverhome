@@ -156,6 +156,27 @@ const Icons = {
       />
     </svg>
   ),
+  Eye: ({ className = "w-5 h-5" }: { className?: string }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+      />
+    </svg>
+  ),
   DragHandle: () => (
     <div className="flex flex-col gap-0.5 px-1 cursor-ew-resize hover:bg-black/15 h-full justify-center items-center rounded select-none no-print">
       <span className="w-0.5 h-3 bg-slate-700"></span>
@@ -3449,6 +3470,266 @@ export default function App() {
                 to achieve **complete portfolio freedom in Year{" "}
                 {finances.bothOffsetYears}**.
               </p>
+            </div>
+          </div>
+        </section>
+
+        {/* EXPLICITLY REQUESTED OVERVIEW SECTION */}
+        <section className="bg-gradient-to-br from-stone-50 to-stone-100/30 border border-stone-250 border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-200 pb-3 gap-2">
+            <div className="flex items-center gap-2">
+              <Icons.Eye className="w-5 h-5 text-slate-850" />
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider font-serif">
+                Overview & Quick Control Center
+              </h3>
+            </div>
+            <span className="text-[10px] text-stone-500 font-mono">
+              Adjust major variables and visualize outcomes instantly
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* VARIABLES SUBSECTION */}
+            <div className="lg:col-span-6 space-y-4">
+              <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block">
+                <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
+                  Major Active Variables
+                </h4>
+              </div>
+              
+              <div className="space-y-4.5 bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
+                {/* 1. Forever Home Purchase Price */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                    <span>Forever Home Purchase Price:</span>
+                    <span className="font-mono font-bold text-blue-900">
+                      ${inputs.purchasePrice.toLocaleString()}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1000000}
+                    max={finances.maxAffordablePrice}
+                    step={10000}
+                    value={inputs.purchasePrice}
+                    onChange={(e) =>
+                      handleInputChange("purchasePrice", parseInt(e.target.value))
+                    }
+                    className="w-full accent-blue-900 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                    <span>Min: $1.0M</span>
+                    <span>Max: ${(finances.maxAffordablePrice / 1000000).toFixed(3)}M</span>
+                  </div>
+                </div>
+
+                {/* 2. Cash Cushion Buffer */}
+                <div className="space-y-1 pt-3 border-t border-stone-100">
+                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                    <span>Target Day 1 Cash Cushion Buffer:</span>
+                    <span className="font-mono font-bold text-indigo-900">
+                      ${inputs.offsetBuffer.toLocaleString()}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50000}
+                    max={500000}
+                    step={5000}
+                    value={inputs.offsetBuffer}
+                    onChange={(e) =>
+                      handleInputChange("offsetBuffer", parseInt(e.target.value))
+                    }
+                    className="w-full accent-indigo-900 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                    <span>Min: $50k</span>
+                    <span>Max: $500k</span>
+                  </div>
+                </div>
+
+                {/* 3. Meryl's Capital Contribution */}
+                <div className="space-y-1 pt-3 border-t border-stone-100">
+                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                    <span>Meryl's Capital Contribution:</span>
+                    <span className="font-mono font-bold text-emerald-800">
+                      ${inputs.merylContribution.toLocaleString()}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.round(finances.merylNetProceeds)}
+                    step={5000}
+                    value={inputs.merylContribution}
+                    onChange={(e) =>
+                      handleInputChange("merylContribution", parseInt(e.target.value))
+                    }
+                    className="w-full accent-emerald-600 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                    <span>Min: $0</span>
+                    <span>Max Capacity: ${Math.round(finances.merylNetProceeds).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* 4. Weekly Extra Savings Rate */}
+                <div className="space-y-1 pt-3 border-t border-stone-100">
+                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                    <span>Weekly Extra Savings Rate:</span>
+                    <span className="font-mono font-bold text-teal-800">
+                      ${inputs.weeklySavings}/wk
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={5000}
+                    step={100}
+                    value={inputs.weeklySavings}
+                    onChange={(e) =>
+                      handleInputChange("weeklySavings", parseInt(e.target.value))
+                    }
+                    className="w-full accent-teal-600 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                    <span>Min: $0/wk</span>
+                    <span>Max: $5.0k/wk</span>
+                  </div>
+                </div>
+
+                {/* 5. Recast Slider (Smaller footprint) */}
+                <div className="space-y-1 pt-3 border-t border-stone-100">
+                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                    <span>Joint Post-Sale Cash Recast Allocation:</span>
+                    <span className="font-mono font-bold text-amber-800 text-[11px]">
+                      {inputs.internalVariationPct}% Paydown / {100 - inputs.internalVariationPct}% Offset
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={2.5}
+                    value={inputs.internalVariationPct}
+                    onChange={(e) =>
+                      handleInputChange("internalVariationPct", parseFloat(e.target.value))
+                    }
+                    className="w-full accent-amber-600 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[8px] text-stone-400 uppercase tracking-tight font-sans">
+                    <span>0% (Full Liquid Offset)</span>
+                    <span>100% (Full Recast Principal)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* RESULTS SUBSECTION */}
+            <div className="lg:col-span-6 space-y-4">
+              <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block">
+                <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
+                  Major Simulated Outcomes
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Years to Offset Forever Home */}
+                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                      Forever Home Offset Time
+                    </span>
+                    <p className="text-lg font-bold text-emerald-800 mt-2 font-serif leading-tight">
+                      {finances.fhOffsetYears !== "15+" ? (
+                        <>
+                          {finances.fhOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
+                          <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
+                            {getMilestoneDateStr(finances.milestoneFHOffset.week)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-amber-800">15+ Years (Not Offset)</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-stone-100 flex justify-between items-center text-[10.5px] font-serif text-stone-500">
+                    <span>Interest Paid:</span>
+                    <span className="font-mono font-bold text-emerald-800">
+                      ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Years to Complete Portfolio Freedom */}
+                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                      Complete Portfolio Freedom
+                    </span>
+                    <p className="text-lg font-bold text-teal-800 mt-2 font-serif leading-tight">
+                      {finances.bothOffsetYears !== "15+" ? (
+                        <>
+                          {finances.bothOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
+                          <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
+                            {getMilestoneDateStr(finances.milestoneFernOffset.week)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-amber-800">15+ Years (Not Fully Offset)</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-stone-100 space-y-1 text-[10px] font-serif text-stone-500">
+                    <div className="flex justify-between items-center text-[9.5px]">
+                      <span>Fern St Interest:</span>
+                      <span className="font-mono text-teal-700">
+                        ${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center font-bold text-stone-600 border-t border-stone-100/60 pt-0.5">
+                      <span>Total Interest Paid:</span>
+                      <span className="font-mono text-slate-800">
+                        ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Uncommitted Discretionary Cash */}
+                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                      Uncommitted Discretionary Cash
+                    </span>
+                    <p className={`text-lg font-bold mt-2 font-mono ${finances.leftoverDiscretionaryCash >= 0 ? "text-slate-800" : "text-rose-700"}`}>
+                      ${Math.round(finances.leftoverDiscretionaryCash).toLocaleString()}<span className="text-[11px] text-stone-500 font-sans font-normal">/wk</span>
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500">
+                    {finances.leftoverDiscretionaryCash >= 0 ? (
+                      <span className="text-emerald-700 font-medium font-sans">✓ Positive Cash Flow</span>
+                    ) : (
+                      <span className="text-rose-600 font-semibold font-sans">⚠️ Deficit limit breached!</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Kept Inside Offset (Liquid) Balance */}
+                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                      Kept Inside Offset (Liquid)
+                    </span>
+                    <p className="text-lg font-bold text-amber-800 mt-2 font-mono">
+                      ${Math.round(finances.keptInOffsetAccount).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500 leading-tight">
+                    Funds remaining highly liquid inside offset following recasting choice.
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
