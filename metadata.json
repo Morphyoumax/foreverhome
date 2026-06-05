@@ -1,0 +1,6 @@
+{
+  "name": "Warragul Multigenerational Estate Strategy Planner",
+  "description": "Models the financial and chronological implications of concurrent house buying and selling situations, including Granny Flat Interest rules, recasting mortgages, and parallel transitions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
