@@ -207,15 +207,15 @@ const DEFAULT_INPUTS: PropertyInputs = {
   // Parallel timeline delays
   merylStartDelay: 0,              // Timeline start
   merylPrepDays: 90,               // Default 90 days ending in mid-August
-  merylCampaignDays: 28,           // Listed for sale campaign
+  merylCampaignDays: 45,           // Listed for sale campaign (average time on market)
   merylSettleDays: 60,             // Twin Ranges settlement period
   
-  fhStartDelay: 14,                // Independent contract sign / prep delay
+  fhStartDelay: 123,               // Independent contract sign / prep delay (Mid-September onset)
   fhSettleDays: 60,                // Settlement on Forever Home
   renoDays: 21,                    // Renovation period
   moveDays: 7,                     // Move-in duration
   
-  paulanStartDelay: 102,           // Starts post-move by default, but completely decoupled
+  paulanStartDelay: 211,           // Shifted to start immediately after the move event in Swimlane B concludes
   paulanPrepDays: 7,               // Paulan prep duration
   paulanCampaignDays: 28,          // Paulan marketing
   paulanSettleDays: 60,            // Settlement period on selling Paulan Court
@@ -223,6 +223,11 @@ const DEFAULT_INPUTS: PropertyInputs = {
   internalVariationPct: 50,        // 0% = Keep all post-sale cash in Offset, 100% = Pay down Loan Principal (Recast)
   depletionPriorityToggle: "paulan", // Default priority
   stampDutyRate: 5.5,              // Stamp Duty / purchase cost percent (defaults to Victoria 5.5%)
+  
+  merylRentCostPerWeek: 150,       // Out of pocket renting cost for Meryl per week
+  merylRentingExtraDays: 0,        // Extra rental period extensions
+  recastTriggerEvent: "gfi",       // Default recast trigger event
+  merylRentStartOffset: 0,
 };
 
 // Helper to consolidate, clamp and adjust financial parameters dynamically in response to slider changes
@@ -246,17 +251,39 @@ const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     merylSalePrice: merylSale,
     merylContribution: merylContribution,
     stampDutyRate: newInputs.stampDutyRate ?? 5.5,
-    offsetBuffer: buffer
+    offsetBuffer: buffer,
+    merylRentCostPerWeek: newInputs.merylRentCostPerWeek ?? 150,
+    merylRentingExtraDays: newInputs.merylRentingExtraDays ?? 0,
+    recastTriggerEvent: newInputs.recastTriggerEvent ?? "gfi",
+    merylRentStartOffset: newInputs.merylRentStartOffset ?? 0,
   };
 };
+
+const TIMELINE_KEYS: (keyof PropertyInputs)[] = [
+  "merylStartDelay",
+  "merylPrepDays",
+  "merylCampaignDays",
+  "merylSettleDays",
+  "fhStartDelay",
+  "fhSettleDays",
+  "renoDays",
+  "moveDays",
+  "paulanStartDelay",
+  "paulanPrepDays",
+  "paulanCampaignDays",
+  "paulanSettleDays",
+  "merylRentingExtraDays",
+  "merylRentStartOffset"
+];
 
 export default function App() {
   const [inputs, setInputs] = useState<PropertyInputs>(() =>
     adjustInputs(DEFAULT_INPUTS)
   );
-  const [scenarios, setScenarios] = useState<PropertyScenario[]>(() => {
+
+  const [financialScenarios, setFinancialScenarios] = useState<PropertyScenario[]>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v9");
+      const saved = localStorage.getItem("property_scenarios_v10_financial");
       if (saved) {
         const list = JSON.parse(saved);
         if (Array.isArray(list)) {
@@ -288,20 +315,72 @@ export default function App() {
       },
     ];
   });
+
+  const [timelineScenarios, setTimelineScenarios] = useState<PropertyScenario[]>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_timeline");
+      if (saved) {
+        const list = JSON.parse(saved);
+        if (Array.isArray(list)) {
+          return list.map((sc: any) => ({
+            name: sc.name,
+            inputs: adjustInputs({
+              ...DEFAULT_INPUTS,
+              ...sc.inputs,
+            })
+          }));
+        }
+      }
+    } catch {
+      // standard fallback below
+    }
+    return [
+      {
+        name: "Sell Twin Ranges before Forever Settles",
+        inputs: adjustInputs({
+          ...DEFAULT_INPUTS,
+          merylStartDelay: 0,
+          merylPrepDays: 60,
+          merylCampaignDays: 30,
+          merylSettleDays: 60,
+          fhStartDelay: 110,
+          fhSettleDays: 60,
+        }),
+      },
+      {
+        name: "Moving House in Jan",
+        inputs: adjustInputs({
+          ...DEFAULT_INPUTS,
+          fhStartDelay: 155,
+        }),
+      },
+    ];
+  });
+
   const [newScenarioName, setNewScenarioName] = useState("");
+  const [newTimelineScenarioName, setNewTimelineScenarioName] = useState("");
   const [activeInteraction, setActiveInteraction] = useState<ActiveInteraction | null>(null);
   const [isPaulanLinkedHovered, setIsPaulanLinkedHovered] = useState(false);
+  const [activeTab, setActiveTab] = useState<"timeline" | "mortgage" | "settles">("timeline");
   const ganttContainerRef = useRef<HTMLDivElement | null>(null);
 
   const WeeklyNetSalary = 5303.35; // Locked family salary split
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v9", JSON.stringify(scenarios));
+      localStorage.setItem("property_scenarios_v10_financial", JSON.stringify(financialScenarios));
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
-  }, [scenarios]);
+  }, [financialScenarios]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_timeline", JSON.stringify(timelineScenarios));
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [timelineScenarios]);
 
   // Helper function to calculate a calendar date from a day offset
   const getGanttDateStr = (days: number) => {
@@ -339,18 +418,24 @@ export default function App() {
     const moveStart = renoEnd;
     const moveEnd = moveStart + inputs.moveDays;
 
-    // 3. Paulan Court Track (Red/Pink/Maroon Shades)
-    const paulanPrepStart = inputs.paulanStartDelay;
+    // 3. Paulan Court Track (Red/Pink/Maroon Shades) - Shifted dynamically to start after Swimlane B concludes
+    const paulanPrepStart = moveEnd;
     const paulanPrepEnd = paulanPrepStart + inputs.paulanPrepDays;
     const paulanCampaignStart = paulanPrepEnd;
     const paulanCampaignEnd = paulanCampaignStart + inputs.paulanCampaignDays;
     const paulanSettleStart = paulanCampaignEnd;
     const paulanSettleEnd = paulanSettleStart + inputs.paulanSettleDays;
 
+    // 4. Meryl Renting Track (Starts 14 days before merylSettleEnd by default + merylRentStartOffset)
+    const merylRentStart = Math.max(0, merylSettleEnd - 14 + inputs.merylRentStartOffset);
+    const merylRentEnd = moveEnd + inputs.merylRentingExtraDays;
+    const merylRentDays = Math.max(1, merylRentEnd - merylRentStart);
+
     const maxDuration = Math.max(
       merylSettleEnd,
       moveEnd,
       paulanSettleEnd,
+      merylRentEnd,
       200
     );
 
@@ -401,6 +486,9 @@ export default function App() {
       merylCampaignEnd,
       merylSettleStart,
       merylSettleEnd,
+      merylRentStart,
+      merylRentEnd,
+      merylRentDays,
       fhContractSign,
       fhSettleStart,
       fhSettleEnd,
@@ -422,6 +510,8 @@ export default function App() {
         merylPrepEnd: addDays(merylPrepEnd),
         merylContract: addDays(merylCampaignEnd),
         merylSettle: addDays(merylSettleEnd),
+        merylRentStart: addDays(merylRentStart),
+        merylRentEnd: addDays(merylRentEnd),
         fhContract: addDays(fhContractSign),
         fhSettle: addDays(fhSettleEnd),
         renoEnd: addDays(renoEnd),
@@ -738,6 +828,149 @@ export default function App() {
       };
     }
 
+    // High-Fidelity Transition Period Simulation Engine
+    const transitionWeeksData: any[] = [];
+    let cumulativeTransitionInterest = 0;
+    let maxWeeklyRepaymentInTransition = 0;
+    let totalMerylRentInTransition = 0;
+    let transitionMerylWeeks = 0;
+    let transitionDoubleMortgageWeeks = 0;
+
+    const transitionEndDay = Math.max(timeline.merylSettleEnd, timeline.paulanSettleEnd, timeline.moveEnd);
+    const transitionWeeksCount = Math.ceil(transitionEndDay / 7);
+
+    for (let w = 0; w <= transitionWeeksCount; w++) {
+      const dayOffset = w * 7;
+      const dateStr = getGanttDateStr(dayOffset);
+
+      // 1. Meryl's Renting
+      const rentStart = timeline.merylRentStart;
+      const rentEnd = timeline.merylRentEnd;
+      const hasRentThisWeek = dayOffset >= rentStart && dayOffset < rentEnd;
+      const rentCostThisWeek = hasRentThisWeek ? inputs.merylRentCostPerWeek : 0;
+      totalMerylRentInTransition += rentCostThisWeek;
+      if (hasRentThisWeek) {
+        transitionMerylWeeks++;
+      }
+
+      // 2. Forever Home State
+      const fhOpened = dayOffset >= timeline.fhSettleEnd;
+      const merylSettled = dayOffset >= timeline.merylSettleEnd;
+      const paulanSettled = dayOffset >= timeline.paulanSettleEnd;
+
+      // Recast active trigger checking
+      let isRecast = false;
+      if (fhOpened) {
+        if (inputs.recastTriggerEvent === "day1") {
+          isRecast = true;
+        } else if (inputs.recastTriggerEvent === "gfi") {
+          isRecast = merylSettled;
+        } else if (inputs.recastTriggerEvent === "paulan") {
+          isRecast = merylSettled && paulanSettled;
+        }
+      }
+
+      const fhLoanBeforeRecast = loanRequired;
+      const fhLoanAfterRecast = recastForeverHomeLoanPrincipal;
+      const currFHLoan = fhOpened ? (isRecast ? fhLoanAfterRecast : fhLoanBeforeRecast) : 0;
+      const currFHRepayment = fhOpened ? (isRecast ? recastWeeklyPayment : initialWeeklyPayment) : 0;
+
+      // Extra savings accumulation since FH Opened
+      const weeksFHOpened = fhOpened ? Math.floor((dayOffset - timeline.fhSettleEnd) / 7) : 0;
+      const savingsAccumulated = weeksFHOpened * inputs.weeklySavings;
+
+      // Offset tracking:
+      // FH offset starting point
+      let fhOffsetRaw = fhOpened ? remainingDay1CashCushion : 0;
+      if (fhOpened && merylSettled) {
+        fhOffsetRaw += inputs.merylContribution;
+      }
+      if (fhOpened && paulanSettled) {
+        fhOffsetRaw += paulanNetProceeds;
+      }
+      if (fhOpened && isRecast) {
+        fhOffsetRaw -= appliedToPrincipalReduction;
+      }
+      if (fhOpened) {
+        fhOffsetRaw += savingsAccumulated;
+      }
+
+      const fhOffsetCurrent = Math.min(currFHLoan, Math.max(0, fhOffsetRaw));
+      const excessFHOffset = Math.max(0, fhOffsetRaw - fhOffsetCurrent);
+
+      // Paulan Court Property
+      let paulanLoan = 0;
+      let paulanOffset = 0;
+      let paulanRepay = 0;
+      let paulanInterest = 0;
+
+      if (!paulanSettled) {
+        paulanLoan = ACCOUNT_BALANCES.paulansLoan;
+        paulanRepay = 537.36; // Contractual P&I payment
+        // Offset
+        const basePaulanOffset = ACCOUNT_BALANCES.paulansOffset;
+        const currentPaulanOffset = fhOpened ? (basePaulanOffset - paulanOffsetPulled) : basePaulanOffset;
+        paulanOffset = currentPaulanOffset;
+        paulanInterest = Math.max(0, paulanLoan - paulanOffset) * (0.0618 / 52);
+      }
+
+      if (fhOpened && !paulanSettled) {
+        transitionDoubleMortgageWeeks++;
+      }
+
+      // Fern St Property
+      let fernLoan = ACCOUNT_BALANCES.fernLoan;
+      const fernContractualRepay = 783.74;
+      let fernOffsetBase = ACCOUNT_BALANCES.fernOffset;
+      if (fhOpened) {
+        fernOffsetBase = fernOffsetBase - fernOffsetPulled;
+      }
+      // Add any excess offset from Forever Home
+      let fernOffset = fernOffsetBase + excessFHOffset;
+      fernOffset = Math.min(fernLoan, fernOffset);
+
+      const fernInterest = Math.max(0, fernLoan - fernOffset) * (0.0615 / 52);
+
+      // Cumulative interest
+      const fhInterest = Math.max(0, currFHLoan - fhOffsetCurrent) * rWeekly;
+      
+      const weeklyInterestPaid = fhInterest + paulanInterest + fernInterest;
+      cumulativeTransitionInterest += weeklyInterestPaid;
+
+      const totalWeeklyRepayments = currFHRepayment + paulanRepay + fernContractualRepay;
+      maxWeeklyRepaymentInTransition = Math.max(maxWeeklyRepaymentInTransition, totalWeeklyRepayments);
+
+      transitionWeeksData.push({
+        week: w,
+        dayOffset,
+        dateStr,
+        merylRentCost: rentCostThisWeek,
+        fhLoan: currFHLoan,
+        fhOffset: fhOffsetCurrent,
+        fhRepay: currFHRepayment,
+        fhInterest,
+        fhPrincipal: Math.max(0, currFHRepayment - fhInterest),
+        paulanLoan,
+        paulanOffset,
+        paulanRepay,
+        paulanInterest,
+        paulanPrincipal: Math.max(0, paulanRepay - paulanInterest),
+        fernLoan,
+        fernOffset,
+        fernRepay: fernContractualRepay,
+        fernInterest,
+        fernPrincipal: Math.max(0, fernContractualRepay - fernInterest),
+        totalRepay: totalWeeklyRepayments + rentCostThisWeek,
+        totalInterest: weeklyInterestPaid,
+        hasRentThisWeek,
+        isRecast,
+        paulanSettled,
+        merylSettled,
+        fhOpened,
+        doubleMortgage: fhOpened && !paulanSettled,
+      });
+    }
+
     return {
       stampDuty,
       transactionCosts,
@@ -784,10 +1017,16 @@ export default function App() {
           ? (bothNeutralizedWeek / 52).toFixed(1)
           : "15+",
       simulationData,
+      transitionWeeksData,
+      cumulativeTransitionInterest,
+      maxWeeklyRepaymentInTransition,
+      totalMerylRentInTransition,
+      transitionMerylWeeks,
+      transitionDoubleMortgageWeeks,
     };
   }, [inputs, timeline]);
 
-  const handleInputChange = (field: keyof PropertyInputs, value: number) => {
+  const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
       const next = { ...prev, [field]: value };
       return adjustInputs(next);
@@ -805,7 +1044,7 @@ export default function App() {
       type,
       field,
       startX: clientX,
-      startVal: inputs[field],
+      startVals: inputs,
     });
   };
 
@@ -821,36 +1060,104 @@ export default function App() {
         (deltaX / containerWidth) * timeline.totalDurationDays
       );
 
-      let newVal = Math.max(0, activeInteraction.startVal + deltaDays);
+      let updates: Partial<PropertyInputs> = {};
 
-      // Specific limits on resizes and shifts
-      if (activeInteraction.type === "resize") {
-        if (activeInteraction.field === "merylPrepDays")
-          newVal = Math.max(14, Math.min(180, newVal));
-        if (activeInteraction.field === "merylCampaignDays")
-          newVal = Math.max(7, Math.min(90, newVal));
-        if (activeInteraction.field === "merylSettleDays")
-          newVal = Math.max(14, Math.min(120, newVal));
-        if (activeInteraction.field === "fhSettleDays")
-          newVal = Math.max(14, Math.min(120, newVal));
-        if (activeInteraction.field === "renoDays")
-          newVal = Math.max(0, Math.min(90, newVal));
-        if (activeInteraction.field === "moveDays")
-          newVal = Math.max(1, Math.min(30, newVal));
-        if (activeInteraction.field === "paulanPrepDays")
-          newVal = Math.max(1, Math.min(60, newVal));
-        if (activeInteraction.field === "paulanCampaignDays")
-          newVal = Math.max(7, Math.min(90, newVal));
-        if (activeInteraction.field === "paulanSettleDays")
-          newVal = Math.max(14, Math.min(120, newVal));
+      if (activeInteraction.type === "dragStart") {
+        const field = activeInteraction.field;
+        const vals = activeInteraction.startVals;
+
+        if (field === "merylPrepDays") {
+          const proposedStart = Math.max(0, vals.merylStartDelay + deltaDays);
+          const proposedDuration = Math.max(14, Math.min(180, vals.merylPrepDays - deltaDays));
+          updates = {
+            merylStartDelay: proposedStart,
+            merylPrepDays: proposedDuration,
+          };
+        } else if (field === "merylCampaignDays") {
+          const proposedPrep = Math.max(14, Math.min(180, vals.merylPrepDays + deltaDays));
+          const proposedCampaign = Math.max(7, Math.min(90, vals.merylCampaignDays - deltaDays));
+          updates = {
+            merylPrepDays: proposedPrep,
+            merylCampaignDays: proposedCampaign,
+          };
+        } else if (field === "merylSettleDays") {
+          const proposedCampaign = Math.max(7, Math.min(90, vals.merylCampaignDays + deltaDays));
+          const proposedSettle = Math.max(14, Math.min(120, vals.merylSettleDays - deltaDays));
+          updates = {
+            merylCampaignDays: proposedCampaign,
+            merylSettleDays: proposedSettle,
+          };
+        } else if (field === "merylRentStartOffset") {
+          const proposedOffset = vals.merylRentStartOffset + deltaDays;
+          updates = {
+            merylRentStartOffset: proposedOffset,
+          };
+        } else if (field === "fhSettleDays") {
+          const proposedStart = Math.max(0, vals.fhStartDelay + deltaDays);
+          const proposedDuration = Math.max(14, Math.min(120, vals.fhSettleDays - deltaDays));
+          updates = {
+            fhStartDelay: proposedStart,
+            fhSettleDays: proposedDuration,
+          };
+        } else if (field === "renoDays") {
+          const proposedSettle = Math.max(14, Math.min(120, vals.fhSettleDays + deltaDays));
+          const proposedReno = Math.max(0, Math.min(90, vals.renoDays - deltaDays));
+          updates = {
+            fhSettleDays: proposedSettle,
+            renoDays: proposedReno,
+          };
+        } else if (field === "moveDays") {
+          const proposedReno = Math.max(0, Math.min(90, vals.renoDays + deltaDays));
+          const proposedMove = Math.max(1, Math.min(30, vals.moveDays - deltaDays));
+          updates = {
+            renoDays: proposedReno,
+            moveDays: proposedMove,
+          };
+        } else if (field === "paulanCampaignDays") {
+          const proposedPrep = Math.max(1, Math.min(60, vals.paulanPrepDays + deltaDays));
+          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays - deltaDays));
+          updates = {
+            paulanPrepDays: proposedPrep,
+            paulanCampaignDays: proposedCampaign,
+          };
+        } else if (field === "paulanSettleDays") {
+          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays + deltaDays));
+          const proposedSettle = Math.max(14, Math.min(120, vals.paulanSettleDays - deltaDays));
+          updates = {
+            paulanCampaignDays: proposedCampaign,
+            paulanSettleDays: proposedSettle,
+          };
+        }
       } else {
-        newVal = Math.max(0, Math.min(250, newVal));
+        const field = activeInteraction.field;
+        const vals = activeInteraction.startVals;
+        const startVal = vals[field] ?? 0;
+        let newVal = Math.max(0, startVal + deltaDays);
+
+        if (activeInteraction.type === "resize") {
+          if (field === "merylPrepDays") newVal = Math.max(14, Math.min(180, newVal));
+          if (field === "merylCampaignDays") newVal = Math.max(7, Math.min(90, newVal));
+          if (field === "merylSettleDays") newVal = Math.max(14, Math.min(120, newVal));
+          if (field === "fhSettleDays") newVal = Math.max(14, Math.min(120, newVal));
+          if (field === "renoDays") newVal = Math.max(0, Math.min(90, newVal));
+          if (field === "moveDays") newVal = Math.max(1, Math.min(30, newVal));
+          if (field === "paulanPrepDays") newVal = Math.max(1, Math.min(60, newVal));
+          if (field === "paulanCampaignDays") newVal = Math.max(7, Math.min(90, newVal));
+          if (field === "paulanSettleDays") newVal = Math.max(14, Math.min(120, newVal));
+          if (field === "merylRentingExtraDays") newVal = Math.max(0, Math.min(365, newVal));
+        } else {
+          newVal = Math.max(0, Math.min(250, newVal));
+        }
+
+        updates = {
+          [field]: newVal,
+        };
       }
 
       setInputs((prev) =>
         adjustInputs({
           ...prev,
-          [activeInteraction.field]: newVal,
+          ...updates,
         })
       );
     };
@@ -874,23 +1181,58 @@ export default function App() {
     };
   }, [activeInteraction, timeline.totalDurationDays]);
 
-  const handleSaveScenario = () => {
+  const handleSaveFinancialScenario = () => {
     if (!newScenarioName.trim()) return;
     const name = newScenarioName.trim();
     const updated = [
-      ...scenarios.filter((s) => s.name !== name),
+      ...financialScenarios.filter((s) => s.name !== name),
       { name, inputs },
     ];
-    setScenarios(updated);
+    setFinancialScenarios(updated);
     setNewScenarioName("");
   };
 
-  const handleLoadScenario = (scenario: PropertyScenario) => {
-    setInputs(adjustInputs(scenario.inputs));
+  const handleSaveTimelineScenario = () => {
+    if (!newTimelineScenarioName.trim()) return;
+    const name = newTimelineScenarioName.trim();
+    const updated = [
+      ...timelineScenarios.filter((s) => s.name !== name),
+      { name, inputs },
+    ];
+    setTimelineScenarios(updated);
+    setNewTimelineScenarioName("");
   };
 
-  const handleDeleteScenario = (name: string) => {
-    setScenarios((prev) => prev.filter((s) => s.name !== name));
+  const handleLoadFinancialScenario = (scenario: PropertyScenario) => {
+    setInputs((current) => {
+      const updated = { ...current };
+      (Object.keys(current) as (keyof PropertyInputs)[]).forEach((key) => {
+        if (!TIMELINE_KEYS.includes(key)) {
+          (updated as any)[key] = scenario.inputs[key];
+        }
+      });
+      return adjustInputs(updated);
+    });
+  };
+
+  const handleLoadTimelineScenario = (scenario: PropertyScenario) => {
+    setInputs((current) => {
+      const updated = { ...current };
+      (Object.keys(current) as (keyof PropertyInputs)[]).forEach((key) => {
+        if (TIMELINE_KEYS.includes(key)) {
+          (updated as any)[key] = scenario.inputs[key];
+        }
+      });
+      return adjustInputs(updated);
+    });
+  };
+
+  const handleDeleteFinancialScenario = (name: string) => {
+    setFinancialScenarios((prev) => prev.filter((s) => s.name !== name));
+  };
+
+  const handleDeleteTimelineScenario = (name: string) => {
+    setTimelineScenarios((prev) => prev.filter((s) => s.name !== name));
   };
 
   const handleExportHtmlReport = () => {
@@ -1332,12 +1674,308 @@ export default function App() {
           </div>
         )}
 
-        {/* SECTION 1: GANTT CHART SWIMLANES */}
+        {/* WORKSPACE MAIN GRID */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* ALWAYS VISIBLE LEFT THIRD: OVERVIEW & MAJOR VARIABLES */}
+          <aside className="lg:col-span-4 space-y-6 lg:sticky lg:top-[90px] h-auto lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto pr-1 no-scrollbar no-print">
+            {/* EXPLICITLY REQUESTED OVERVIEW SECTION (RELOCATED TO LEFT BAR) */}
+            <section className="bg-gradient-to-br from-stone-50 to-stone-100/30 border border-stone-250 border-stone-200 p-5 rounded-xl space-y-5 shadow-sm">
+              <div className="flex items-center gap-2 border-b border-stone-200 pb-3">
+                <Icons.Eye className="w-5 h-5 text-slate-850" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider font-serif">
+                  Overview & Control Center
+                </h3>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block w-full text-center">
+                  <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
+                    Major Active Variables
+                  </h4>
+                </div>
+                
+                <div className="space-y-4 bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                  {/* 1. Forever Home Purchase Price */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                      <span>Forever Home Purchase Price:</span>
+                      <span className="font-mono font-bold text-blue-900">
+                        ${inputs.purchasePrice.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1000000}
+                      max={finances.maxAffordablePrice}
+                      step={10000}
+                      value={inputs.purchasePrice}
+                      onChange={(e) =>
+                        handleInputChange("purchasePrice", parseInt(e.target.value))
+                      }
+                      className="w-full accent-blue-900 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                      <span>Min: $1.0M</span>
+                      <span>Max: ${(finances.maxAffordablePrice / 1000000).toFixed(3)}M</span>
+                    </div>
+                  </div>
+
+                  {/* 2. Cash Cushion Buffer */}
+                  <div className="space-y-1 pt-3 border-t border-stone-100">
+                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                      <span>Target Day 1 Cash Cushion Buffer:</span>
+                      <span className="font-mono font-bold text-indigo-900">
+                        ${inputs.offsetBuffer.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50000}
+                      max={500000}
+                      step={5000}
+                      value={inputs.offsetBuffer}
+                      onChange={(e) =>
+                        handleInputChange("offsetBuffer", parseInt(e.target.value))
+                      }
+                      className="w-full accent-indigo-900 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                      <span>Min: $50k</span>
+                      <span>Max: $500k</span>
+                    </div>
+                  </div>
+
+                  {/* 3. Meryl's Capital Contribution */}
+                  <div className="space-y-1 pt-3 border-t border-stone-100">
+                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                      <span>Meryl's Capital Contribution:</span>
+                      <span className="font-mono font-bold text-emerald-800">
+                        ${inputs.merylContribution.toLocaleString()}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.round(finances.merylNetProceeds)}
+                      step={5000}
+                      value={inputs.merylContribution}
+                      onChange={(e) =>
+                        handleInputChange("merylContribution", parseInt(e.target.value))
+                      }
+                      className="w-full accent-emerald-600 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                      <span>Min: $0</span>
+                      <span>Max Capacity: ${Math.round(finances.merylNetProceeds).toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* 4. Weekly Extra Savings Rate */}
+                  <div className="space-y-1 pt-3 border-t border-stone-100">
+                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                      <span>Weekly Extra Savings Rate:</span>
+                      <span className="font-mono font-bold text-teal-800">
+                        ${inputs.weeklySavings}/wk
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={5000}
+                      step={100}
+                      value={inputs.weeklySavings}
+                      onChange={(e) =>
+                        handleInputChange("weeklySavings", parseInt(e.target.value))
+                      }
+                      className="w-full accent-teal-600 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                      <span>Min: $0/wk</span>
+                      <span>Max: $5.0k/wk</span>
+                    </div>
+                  </div>
+
+                  {/* 5. Recast Slider (Smaller footprint) */}
+                  <div className="space-y-1 pt-3 border-t border-stone-100">
+                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                      <span>Joint Post-Sale Cash Recast Allocation:</span>
+                      <span className="font-mono font-bold text-amber-800 text-[11px]">
+                        {inputs.internalVariationPct}% Paydown / {100 - inputs.internalVariationPct}% Offset
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={2.5}
+                      value={inputs.internalVariationPct}
+                      onChange={(e) =>
+                        handleInputChange("internalVariationPct", parseFloat(e.target.value))
+                      }
+                      className="w-full accent-amber-600 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[8px] text-stone-400 uppercase tracking-tight font-sans">
+                      <span>0% (Full Offset)</span>
+                      <span>100% (Full Recast)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block w-full text-center">
+                  <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
+                    Major Simulated Outcomes
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Years to Offset Forever Home */}
+                  <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                        Forever Home Offset Time
+                      </span>
+                      <p className="text-lg font-bold text-emerald-800 mt-2 font-serif leading-tight">
+                        {finances.fhOffsetYears !== "15+" ? (
+                          <>
+                            {finances.fhOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
+                            <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
+                              {getMilestoneDateStr(finances.milestoneFHOffset.week)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-amber-800">15+ Years (Not Offset)</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-stone-100 flex justify-between items-center text-[10.5px] font-serif text-stone-500">
+                      <span>Interest Paid:</span>
+                      <span className="font-mono font-bold text-emerald-800">
+                        ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Years to Complete Portfolio Freedom */}
+                  <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                        Complete Portfolio Freedom
+                      </span>
+                      <p className="text-lg font-bold text-teal-800 mt-2 font-serif leading-tight">
+                        {finances.bothOffsetYears !== "15+" ? (
+                          <>
+                            {finances.bothOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
+                            <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
+                              {getMilestoneDateStr(finances.milestoneFernOffset.week)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-amber-800">15+ Years (Not Offset)</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-stone-100 space-y-1 text-[10px] font-serif text-stone-500">
+                      <div className="flex justify-between items-center text-[9.5px]">
+                        <span>Fern St Interest:</span>
+                        <span className="font-mono text-teal-700">
+                          ${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center font-bold text-stone-600 border-t border-stone-100/60 pt-0.5">
+                        <span>Total Interest Paid:</span>
+                        <span className="font-mono text-slate-800">
+                          ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Uncommitted Discretionary Cash */}
+                  <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                        Uncommitted Discretionary Cash
+                      </span>
+                      <p className={`text-lg font-bold mt-2 font-mono ${finances.leftoverDiscretionaryCash >= 0 ? "text-slate-800" : "text-rose-700"}`}>
+                        ${Math.round(finances.leftoverDiscretionaryCash).toLocaleString()}<span className="text-[11px] text-stone-500 font-sans font-normal">/wk</span>
+                      </p>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500">
+                      {finances.leftoverDiscretionaryCash >= 0 ? (
+                        <span className="text-emerald-700 font-medium font-sans">✓ Positive Cash Flow</span>
+                      ) : (
+                        <span className="text-rose-600 font-semibold font-sans">⚠️ Deficit limit breached!</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Kept Inside Offset (Liquid) Balance */}
+                  <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                        Kept Inside Offset (Liquid)
+                      </span>
+                      <p className="text-lg font-bold text-amber-800 mt-2 font-mono">
+                        ${Math.round(finances.keptInOffsetAccount).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500 leading-tight">
+                      Funds remaining highly liquid inside offset following recasting choice.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </aside>
+
+          {/* RIGHT COL: TWO THIRDS TABS */}
+          <div className="lg:col-span-8 space-y-6">
+            {/* TABS ROW */}
+            <div className="flex flex-wrap border border-stone-200 gap-1.5 text-sm no-print bg-white p-1.5 rounded-xl shadow-sm">
+              <button
+                onClick={() => setActiveTab("timeline")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "timeline"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <Icons.Calendar className="w-4 h-4" />
+                Timeline
+              </button>
+              <button
+                onClick={() => setActiveTab("mortgage")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "mortgage"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <Icons.Settings className="w-4 h-4" />
+                Mortgage Settings
+              </button>
+              <button
+                onClick={() => setActiveTab("settles")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "settles"
+                    ? "bg-blue-950 bg-blue-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <Icons.TrendUp className="w-4 h-4" />
+                When the dust settles
+              </button>
+            </div>
+
+            {/* TAB CONTENTS */}
+            <div className={`space-y-6 ${activeTab === "timeline" ? "block" : "hidden print:block"}`}>
+              {/* SECTION 1: GANTT CHART SWIMLANES */}
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold text-blue-900 font-serif">
-                Decoupled Chronological Transition (Parallel Swimlanes)
+                Timeline
               </h3>
               <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
                 <strong>Drag any track's body left/right</strong> to shift delay
@@ -1352,6 +1990,72 @@ export default function App() {
               <span className="font-bold text-blue-900">
                 {timeline.totalDurationDays} Days
               </span>
+            </div>
+          </div>
+
+          {/* TIMELINE SCENARIOS CONTROLLER */}
+          <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl space-y-3 no-print">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200/60 pb-2">
+              <div className="flex items-center gap-2">
+                <Icons.Calendar className="w-4 h-4 text-blue-900" />
+                <span className="text-[11px] font-bold text-stone-750 uppercase tracking-wider font-serif">
+                  Save / Load Timeline Layouts
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
+                <input
+                  type="text"
+                  placeholder="Layout Name (e.g. Early Settlement)"
+                  value={newTimelineScenarioName}
+                  onChange={(e) => setNewTimelineScenarioName(e.target.value)}
+                  className="border border-stone-300 rounded bg-white px-2.5 py-1 text-xs font-sans focus:outline-none focus:ring-1 focus:ring-blue-900 flex-1 sm:flex-initial"
+                />
+                <button
+                  onClick={handleSaveTimelineScenario}
+                  className="bg-blue-900 hover:bg-blue-950 text-white font-serif font-semibold text-xs px-3.5 py-1 rounded transition shadow-sm cursor-pointer"
+                >
+                  Save Layout
+                </button>
+              </div>
+            </div>
+            
+            {/* Render Active Configurations with Load/Delete Controls */}
+            <div className="flex flex-wrap gap-2 items-center text-xs">
+              <span className="text-stone-500 font-serif italic text-[11px]">
+                Select Layout:
+              </span>
+              {timelineScenarios.map((sc, sIdx) => {
+                const isActive = TIMELINE_KEYS.every(
+                  (key) => sc.inputs[key] === inputs[key]
+                );
+
+                return (
+                  <div
+                    key={sIdx}
+                    className={`inline-flex items-center border rounded px-2.5 py-1 gap-1.5 transition-all ${
+                      isActive 
+                        ? "bg-blue-900 border-blue-900 text-white shadow-sm" 
+                        : "bg-white border-stone-200 text-stone-700 hover:border-stone-400"
+                    }`}
+                  >
+                    <button
+                      onClick={() => handleLoadTimelineScenario(sc)}
+                      className="font-semibold transition text-[11px] cursor-pointer text-left"
+                    >
+                      {sc.name}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTimelineScenario(sc.name)}
+                      className={`font-semibold ml-1.5 text-xs cursor-pointer ${
+                        isActive ? "text-blue-200 hover:text-white" : "text-stone-400 hover:text-red-600"
+                      }`}
+                      title="Delete this layout"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1423,7 +2127,22 @@ export default function App() {
                         {getGanttDateStr(timeline.merylPrepStart)} -{" "}
                         {getGanttDateStr(timeline.merylPrepEnd)})
                       </span>
-                      <span>{inputs.merylPrepDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.merylPrepDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "merylPrepDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
@@ -1433,7 +2152,7 @@ export default function App() {
                         onTouchStart={(e) =>
                           startGanttDrag(e, "merylStartDelay", "shift")
                         }
-                        className="bg-emerald-100 border-r-4 border-emerald-500 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-emerald-850 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        className="bg-emerald-100 border-r-4 border-emerald-500 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-emerald-850 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           marginLeft: `${
                             (timeline.merylPrepStart /
@@ -1447,6 +2166,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylPrepDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylPrepDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Prep (Ends: {timeline.dates.merylPrepEnd})
                         </span>
@@ -1475,11 +2207,32 @@ export default function App() {
                         {getGanttDateStr(timeline.merylCampaignStart)} -{" "}
                         {getGanttDateStr(timeline.merylCampaignEnd)})
                       </span>
-                      <span>{inputs.merylCampaignDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="7"
+                          max="180"
+                          value={inputs.merylCampaignDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "merylCampaignDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-emerald-350 border-r-4 border-emerald-600 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "merylStartDelay", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "merylStartDelay", "shift")
+                        }
+                        className="bg-emerald-350 border-r-4 border-emerald-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           backgroundColor: "#34d399",
                           marginLeft: `${
@@ -1494,6 +2247,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylCampaignDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylCampaignDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Listing Campaign (Contract:{" "}
                           {timeline.dates.merylContract})
@@ -1523,11 +2289,32 @@ export default function App() {
                         {getGanttDateStr(timeline.merylSettleStart)} -{" "}
                         {getGanttDateStr(timeline.merylSettleEnd)})
                       </span>
-                      <span>{inputs.merylSettleDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="14"
+                          max="180"
+                          value={inputs.merylSettleDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "merylSettleDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-emerald-800 border-r-4 border-emerald-950 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "merylStartDelay", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "merylStartDelay", "shift")
+                        }
+                        className="bg-emerald-800 border-r-4 border-emerald-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           backgroundColor: "#047857",
                           marginLeft: `${
@@ -1542,6 +2329,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylSettleDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylSettleDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Settlement (Cash Injection:{" "}
                           {timeline.dates.merylSettle})
@@ -1554,6 +2354,89 @@ export default function App() {
                           onTouchStart={(e) => {
                             e.stopPropagation();
                             startGanttDrag(e, "merylSettleDays", "resize");
+                          }}
+                          className="absolute right-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Meryl Renting Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[11px] text-stone-505 text-stone-500 font-semibold font-serif">
+                      <span className="flex items-center gap-1 text-amber-700">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+                        4. Meryl Renting Period (Temporary Lodging) - (
+                        {getGanttDateStr(timeline.merylRentStart)} -{" "}
+                        {getGanttDateStr(timeline.merylRentEnd)})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-stone-400 font-sans mr-1">Extend rent by:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.merylRentingExtraDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "merylRentingExtraDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-amber-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-amber-50/20 h-7 rounded-md border border-amber-200/40 relative flex items-center overflow-hidden">
+                      <div
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "merylRentStartOffset", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "merylRentStartOffset", "shift")
+                        }
+                        className="border-r-4 border-amber-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-amber-950 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        style={{
+                          backgroundColor: "#f59e0b",
+                          marginLeft: `${
+                            (Math.max(0, timeline.merylRentStart) /
+                              timeline.totalDurationDays) *
+                            100
+                          }%`,
+                          width: `${
+                            (Math.max(1, timeline.merylRentEnd - Math.max(0, timeline.merylRentStart)) /
+                              timeline.totalDurationDays) *
+                            100
+                          }%`,
+                        }}
+                      >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylRentStartOffset", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylRentStartOffset", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
+                        <span className="truncate pr-1">
+                          Lodging Rental Period (~{Math.round(timeline.merylRentDays / 7)} Weeks)
+                        </span>
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylRentingExtraDays", "resize");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "merylRentingExtraDays", "resize");
                           }}
                           className="absolute right-0 top-0 bottom-0 flex items-center"
                         >
@@ -1602,7 +2485,22 @@ export default function App() {
                         {getGanttDateStr(timeline.fhSettleStart)} -{" "}
                         {getGanttDateStr(timeline.fhSettleEnd)})
                       </span>
-                      <span>{inputs.fhSettleDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.fhSettleDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "fhSettleDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
@@ -1612,7 +2510,7 @@ export default function App() {
                         onTouchStart={(e) =>
                           startGanttDrag(e, "fhStartDelay", "shift")
                         }
-                        className="bg-blue-100 border-r-4 border-blue-500 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-blue-900 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        className="bg-blue-100 border-r-4 border-blue-500 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-blue-900 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           marginLeft: `${
                             (timeline.fhContractSign /
@@ -1625,6 +2523,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "fhSettleDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "fhSettleDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Contract to Settlement ({timeline.dates.fhSettle})
                         </span>
@@ -1653,11 +2564,32 @@ export default function App() {
                         {getGanttDateStr(timeline.renoStart)} -{" "}
                         {getGanttDateStr(timeline.renoEnd)})
                       </span>
-                      <span>{inputs.renoDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.renoDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "renoDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-blue-450 border-r-4 border-blue-600 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "fhStartDelay", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "fhStartDelay", "shift")
+                        }
+                        className="bg-blue-450 border-r-4 border-blue-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           backgroundColor: "#60a5fa",
                           marginLeft: `${
@@ -1669,6 +2601,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "renoDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "renoDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">Renovation Period</span>
                         <div
                           onMouseDown={(e) => {
@@ -1695,11 +2640,32 @@ export default function App() {
                         {getGanttDateStr(timeline.moveStart)} -{" "}
                         {getGanttDateStr(timeline.moveEnd)})
                       </span>
-                      <span>{inputs.moveDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.moveDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "moveDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-blue-900 border-r-4 border-blue-950 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "fhStartDelay", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "fhStartDelay", "shift")
+                        }
+                        className="bg-blue-900 border-r-4 border-blue-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
                         style={{
                           backgroundColor: "#1e3a8a",
                           marginLeft: `${
@@ -1711,6 +2677,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "moveDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "moveDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Move Complete ({timeline.dates.moveEnd})
                         </span>
@@ -1740,29 +2719,14 @@ export default function App() {
                   : "border border-stone-100 bg-stone-50/20"
               }`}>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-rose-905 font-bold flex items-center gap-1.5 font-serif">
+                  <span className="text-rose-900 font-bold flex items-center gap-1.5 font-serif">
                     <span className="w-2.5 h-2.5 rounded-full bg-rose-700 animate-pulse"></span>
                     <span className={isPaulanLinkedHovered ? "text-rose-900 font-extrabold" : "text-rose-900"}>
                       Swimlane C: Paulan Court Prep & Sale (Concludes: {timeline.dates.paulanSettle})
                     </span>
                   </span>
-                  <div className="flex items-center gap-2 font-mono text-[11px]">
-                    <span className="text-[10px] text-stone-400">
-                      Shift Delay:
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="250"
-                      value={inputs.paulanStartDelay}
-                      onChange={(e) =>
-                        handleInputChange(
-                          "paulanStartDelay",
-                          parseInt(e.target.value) || 0
-                        )
-                      }
-                      className="w-10 text-center font-bold text-rose-800 border border-stone-200 rounded bg-white py-0.5"
-                    />
+                  <div className="flex items-center gap-2 font-mono text-[11px] bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200">
+                    <span className="text-[10px] font-sans font-semibold">🔗 Locked to B Move-out</span>
                   </div>
                 </div>
 
@@ -1775,17 +2739,26 @@ export default function App() {
                         {getGanttDateStr(timeline.paulanPrepStart)} -{" "}
                         {getGanttDateStr(timeline.paulanPrepEnd)})
                       </span>
-                      <span>{inputs.paulanPrepDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.paulanPrepDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "paulanPrepDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "paulanStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "paulanStartDelay", "shift")
-                        }
-                        className="bg-pink-100 border-r-4 border-pink-400 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-pink-900 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        className="bg-pink-100 border-r-4 border-pink-400 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-pink-900 transition-all duration-75 relative"
                         style={{
                           marginLeft: `${
                             (timeline.paulanPrepStart /
@@ -1825,11 +2798,26 @@ export default function App() {
                         {getGanttDateStr(timeline.paulanCampaignStart)} -{" "}
                         {getGanttDateStr(timeline.paulanCampaignEnd)})
                       </span>
-                      <span>{inputs.paulanCampaignDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.paulanCampaignDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "paulanCampaignDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-rose-450 border-r-4 border-rose-600 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        className="bg-rose-450 border-r-4 border-rose-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
                         style={{
                           backgroundColor: "#fb7185",
                           marginLeft: `${
@@ -1844,6 +2832,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "paulanCampaignDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "paulanCampaignDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Marketing Campaign (Contract:{" "}
                           {timeline.dates.paulanContract})
@@ -1873,11 +2874,26 @@ export default function App() {
                         {getGanttDateStr(timeline.paulanSettleStart)} -{" "}
                         {getGanttDateStr(timeline.paulanSettleEnd)})
                       </span>
-                      <span>{inputs.paulanSettleDays} Days</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={inputs.paulanSettleDays}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "paulanSettleDays",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        />
+                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                      </div>
                     </div>
                     <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
                       <div
-                        className="bg-rose-900 border-r-4 border-rose-950 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
+                        className="bg-rose-900 border-r-4 border-rose-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
                         style={{
                           backgroundColor: "#881337",
                           marginLeft: `${
@@ -1892,6 +2908,19 @@ export default function App() {
                           }%`,
                         }}
                       >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "paulanSettleDays", "dragStart");
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            startGanttDrag(e, "paulanSettleDays", "dragStart");
+                          }}
+                          className="absolute left-0 top-0 bottom-0 flex items-center"
+                        >
+                          <Icons.DragHandle />
+                        </div>
                         <span className="truncate pr-1">
                           Proceeds Cash Released ({timeline.dates.paulanSettle})
                         </span>
@@ -1917,6 +2946,343 @@ export default function App() {
           </div>
         </section>
 
+        {/* SECTION 1.5: HIGH-FIDELITY TRANSITION COSTS & STRATEGIES */}
+        <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
+          <div className="border-b border-stone-200 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-amber-900 font-serif flex items-center gap-2">
+                <span className="p-1 px-2 rounded bg-amber-50 text-xs text-amber-800 font-sans tracking-wide uppercase font-semibold">Section 1.5</span>
+                Transition Period Costs & Risks
+              </h3>
+              <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
+                Analyze and mitigate financial friction during the high-stress bridge/transition phase before both assets liquidate.
+              </p>
+            </div>
+            
+            {/* Quick Warning Badge */}
+            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+              {finances.transitionDoubleMortgageWeeks > 0 ? (
+                <span className="text-[11px] font-sans font-semibold bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-md animate-pulse flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                  Parallel Loan Overlap: {finances.transitionDoubleMortgageWeeks} Weeks
+                </span>
+              ) : (
+                <span className="text-[11px] font-sans font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                  Safe Sequence: No Parallel Mortgages
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left: Transition Inputs and Recast Selector */}
+            <div className="lg:col-span-5 space-y-5">
+              <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans border-b border-stone-100 pb-1">
+                Transition Cashflow Configuration
+              </h4>
+              
+              {/* Meryl Weekly Rent */}
+              <div className="p-3.5 bg-amber-50/20 border border-amber-200/40 rounded-xl space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-stone-700 font-serif">Meryl Out-of-Pocket Rent</span>
+                  <div className="flex items-center gap-1 font-mono">
+                    <span className="text-[10px] text-stone-400 font-sans">Cost:</span>
+                    <span className="text-amber-800 font-bold">${inputs.merylRentCostPerWeek}/wk</span>
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="25"
+                  value={inputs.merylRentCostPerWeek}
+                  onChange={(e) => handleInputChange("merylRentCostPerWeek", parseInt(e.target.value) || 0)}
+                  className="w-full accent-amber-600 cursor-pointer"
+                />
+                <p className="text-[10px] text-stone-400 font-sans leading-tight">
+                  Cost incurred during Meryl's temporary accommodation. Currently active for{" "}
+                  <strong className="text-amber-850 font-mono">{Math.round(timeline.merylRentDays / 7)} weeks</strong>{" "}
+                  (includes any extensions).
+                </p>
+              </div>
+
+              {/* Recast Trigger selector */}
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans">
+                    Mortgage Recast Trigger
+                  </span>
+                  <span className="text-[10px] font-sans bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded border border-stone-200">
+                    Strategy Impact
+                  </span>
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => handleInputChange("recastTriggerEvent", "day1")}
+                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
+                      inputs.recastTriggerEvent === "day1"
+                        ? "bg-blue-50/80 border-blue-400 shadow-sm"
+                        : "bg-white border-stone-200 hover:bg-stone-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      checked={inputs.recastTriggerEvent === "day1"}
+                      readOnly
+                      className="mt-0.5 mr-2 accent-blue-850"
+                    />
+                    <div>
+                      <div className="font-bold text-blue-900 font-serif">Option A: Immediate recast (Day 1)</div>
+                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
+                        Reduce principal right away using current surplus offsets. Maximizes interest savings but lowers liquid cushion reserves early.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleInputChange("recastTriggerEvent", "gfi")}
+                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
+                      inputs.recastTriggerEvent === "gfi"
+                        ? "bg-emerald-50/80 border-emerald-400 shadow-sm"
+                        : "bg-white border-stone-200 hover:bg-stone-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      checked={inputs.recastTriggerEvent === "gfi"}
+                      readOnly
+                      className="mt-0.5 mr-2 accent-emerald-850"
+                    />
+                    <div>
+                      <div className="font-bold text-emerald-900 font-serif">Option B: Upon Twin Ranges Settlement</div>
+                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
+                        Trigger recast after Meryl's Twin Ranges sale concludes & grandmother flat proceeds are deposited. Keeps buffers wider during pre-sale stress.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleInputChange("recastTriggerEvent", "paulan")}
+                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
+                      inputs.recastTriggerEvent === "paulan"
+                        ? "bg-rose-50/80 border-rose-400 shadow-sm"
+                        : "bg-white border-stone-200 hover:bg-stone-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      checked={inputs.recastTriggerEvent === "paulan"}
+                      readOnly
+                      className="mt-0.5 mr-2 accent-rose-850"
+                    />
+                    <div>
+                      <div className="font-bold text-rose-900 font-serif">Option C: Double Settlement Concluded</div>
+                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
+                        Recast only after BOTH Meryl & Paulan properties complete. Highly conservative, maintaining maximum liquidity at the expense of interest leakage.
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Analytical Metrics Summary and Interactive Weekly Simulated Log */}
+            <div className="lg:col-span-7 space-y-4">
+              <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans border-b border-stone-100 pb-1">
+                Friction & Interest Leak Analytics
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Metric 1: Double Mortgage Span */}
+                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1 relative overflow-hidden">
+                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
+                    Parallel Loan Overlap
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-rose-850 font-mono tracking-tight">
+                      {finances.transitionDoubleMortgageWeeks}
+                    </span>
+                    <span className="text-xs text-stone-500 font-serif">Weeks</span>
+                  </div>
+                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
+                    Duration where both the Forever Home & Paulan Court mortgages are active concurrently.
+                  </p>
+                  
+                  {finances.transitionDoubleMortgageWeeks > 12 && (
+                    <div className="absolute right-2 top-2 bg-rose-100 text-rose-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-rose-200 tracking-tight animate-pulse">
+                      ⚠️ Severe Tension
+                    </div>
+                  )}
+                  {finances.transitionDoubleMortgageWeeks > 0 && finances.transitionDoubleMortgageWeeks <= 12 && (
+                    <div className="absolute right-2 top-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-200 tracking-tight">
+                      ⚠️ Caution Overlap
+                    </div>
+                  )}
+                  {finances.transitionDoubleMortgageWeeks === 0 && (
+                    <div className="absolute right-2 top-2 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200 tracking-tight">
+                      🛡️ Safe Path
+                    </div>
+                  )}
+                </div>
+
+                {/* Metric 2: Meryl Lodging Rent Total */}
+                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1">
+                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
+                    Total Out-of-pocket Rent
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-amber-800 font-mono tracking-tight">
+                      ${Math.round(finances.totalMerylRentInTransition).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-stone-505 font-serif">Total</span>
+                  </div>
+                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
+                    Outflow for Meryl over {finances.transitionMerylWeeks} rent weeks at ${inputs.merylRentCostPerWeek}/wk.
+                  </p>
+                </div>
+
+                {/* Metric 3: Peak Weekly Outflow Cashflow Pain */}
+                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1 relative">
+                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
+                    Peak Weekly Transitional Outflow
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-blue-900 font-mono tracking-tight">
+                      ${Math.round(finances.maxWeeklyRepaymentInTransition).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-stone-550 font-sans font-mono text-stone-400">/wk</span>
+                  </div>
+                  <p className="text-[10px] text-stone-505 text-stone-505 font-sans leading-normal">
+                    Highest Combined weekly outflows during bridge. Normal is ${Math.round(finances.recastWeeklyPayment)}/wk.
+                  </p>
+                </div>
+
+                {/* Metric 4: Cumulative Transition Interest paid */}
+                <div className="p-4 bg-stone-55 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1">
+                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
+                    Frictional Interest Paid
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-red-700 font-mono tracking-tight">
+                      ${Math.round(finances.cumulativeTransitionInterest).toLocaleString()}
+                    </span>
+                    <span className="text-xs text-stone-505 font-serif">Interest</span>
+                  </div>
+                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
+                    Total interest drained across all mortgages until transition settles. Minimizing this is critical!
+                  </p>
+                </div>
+              </div>
+
+              {/* Dynamic Warning Card */}
+              {finances.transitionDoubleMortgageWeeks > 4 && (
+                <div className="p-3 bg-red-50 border border-red-220 rounded-xl text-xs space-y-1 text-red-950 font-serif">
+                  <div className="font-bold flex items-center gap-1">
+                    <span>⚠️ Extreme Cashflow Restriction Warning</span>
+                  </div>
+                  <p className="text-[11px] font-sans text-red-900 leading-normal">
+                    You have <strong className="font-mono">{finances.transitionDoubleMortgageWeeks} weeks</strong> of dual-mortgage parallel liabilities. During this peak period, your family combined mandatory outflows spike to <strong className="font-mono text-rose-800">${Math.round(finances.maxWeeklyRepaymentInTransition)}/wk</strong>. Make sure you maintain a robust cash offset cushion (minimum ${inputs.offsetBuffer.toLocaleString()}) to shield against unexpected delays before Meryl or Paulan Court property settlement injects major liquidity.
+                  </p>
+                </div>
+              )}
+              {finances.transitionDoubleMortgageWeeks > 0 && finances.transitionDoubleMortgageWeeks <= 4 && (
+                <div className="p-3 bg-amber-50 border border-amber-220 rounded-xl text-xs space-y-1 text-amber-950 font-serif">
+                  <div className="font-bold flex items-center gap-1">
+                    <span>⚠️ Manageable Parallel Mortgage Exposure</span>
+                  </div>
+                  <p className="text-[11px] font-sans text-amber-900 leading-normal">
+                    A short {finances.transitionDoubleMortgageWeeks}-week dual-mortgage period exists. Ensure smooth paperwork alignment to avoid settlement slippage which would further extend this cashflow friction.
+                  </p>
+                </div>
+              )}
+              {finances.transitionDoubleMortgageWeeks === 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-250 rounded-xl text-xs space-y-1 text-emerald-950 font-serif">
+                  <div className="font-bold flex items-center gap-1 text-emerald-900">
+                    <span>🛡️ Optimally Aligned Non-Overlapping Path</span>
+                  </div>
+                  <p className="text-[11px] font-sans text-emerald-900 leading-normal">
+                    Excellent scheduling! By timing settlements sequence beautifully, you have completely eliminated parallel mortgage liabilities, keeping running outflows strictly neutralized.
+                  </p>
+                </div>
+              )}
+
+              {/* Collapsible/Scrollable Weekly Transition Log table */}
+              <div className="border border-stone-200 rounded-xl overflow-hidden bg-white">
+                <div className="bg-stone-50 px-4 py-2 flex justify-between items-center border-b border-stone-200">
+                  <span className="text-xs font-bold text-stone-700 font-serif">
+                    Weekly Simulated Transition Database Log
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-400">
+                    {finances.transitionWeeksData.length} Weeks Modeled
+                  </span>
+                </div>
+                
+                <div className="max-h-[320px] overflow-y-auto divide-y divide-stone-100 text-[11px]">
+                  {finances.transitionWeeksData.map((wData: any) => (
+                    <div 
+                      key={wData.week} 
+                      className={`px-4 py-2 grid grid-cols-12 gap-1 items-center font-mono ${
+                        wData.doubleMortgage 
+                          ? "bg-rose-50/40 hover:bg-rose-50" 
+                          : wData.hasRentThisWeek 
+                          ? "bg-amber-50/30 hover:bg-amber-50" 
+                          : "hover:bg-stone-50"
+                      }`}
+                    >
+                      {/* Week index & date */}
+                      <div className="col-span-3 font-sans">
+                        <div className="font-bold text-slate-800">Week {wData.week}</div>
+                        <div className="text-[9px] text-stone-400">{wData.dateStr}</div>
+                      </div>
+
+                      {/* State Pills */}
+                      <div className="col-span-3 flex flex-wrap gap-1 font-sans">
+                        {wData.doubleMortgage && (
+                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-rose-100 text-rose-700 uppercase tracking-tight">
+                            Double Loan
+                          </span>
+                        )}
+                        {wData.hasRentThisWeek && (
+                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-100 text-amber-700 uppercase tracking-tight">
+                            Rent Active
+                          </span>
+                        )}
+                        {wData.isRecast && (
+                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-blue-100 text-blue-700 uppercase tracking-tight">
+                            Recast
+                          </span>
+                        )}
+                        {!wData.fhOpened && (
+                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-stone-100 text-stone-500 uppercase tracking-tight">
+                            Pre-Purchase
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Weekly repayments */}
+                      <div className="col-span-3 text-right font-semibold">
+                        <div className="text-slate-850">${Math.round(wData.totalRepay).toLocaleString()}</div>
+                        <div className="text-[9px] text-stone-400 font-sans font-normal">Mandatory</div>
+                      </div>
+
+                      {/* Interest Leak count */}
+                      <div className="col-span-3 text-right">
+                        <div className="text-red-700 font-bold">${Math.round(wData.totalInterest).toLocaleString()}</div>
+                        <div className="text-[9px] text-stone-400 font-sans font-normal">Interest cost</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+            </div>
+
+            <div className={`space-y-6 ${activeTab === "mortgage" ? "block" : "hidden print:block"}`}>
+
         {/* SECTION 2: INPUT CENTER & AFFORDABILITY ENGINE */}
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-200 pb-3">
@@ -1937,14 +3303,14 @@ export default function App() {
                 className="border border-stone-300 rounded px-3 py-1.5 text-xs font-sans focus:outline-none focus:ring-1 focus:ring-blue-900"
               />
               <button
-                onClick={handleSaveScenario}
-                className="bg-blue-900 hover:bg-blue-950 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm"
+                onClick={handleSaveFinancialScenario}
+                className="bg-blue-900 hover:bg-blue-950 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm cursor-pointer"
               >
                 Save Scenario
               </button>
               <button
                 onClick={handleExportHtmlReport}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm flex items-center gap-1.5"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm flex items-center gap-1.5 cursor-pointer"
                 title="Download this exact modeling configuration as a self-contained HTML document"
               >
                 <Icons.TrendUp className="w-3.5 h-3.5" />
@@ -1954,30 +3320,43 @@ export default function App() {
           </div>
 
           {/* Saved Configuration Badges */}
-          {scenarios.length > 0 && (
+          {financialScenarios.length > 0 && (
             <div className="flex flex-wrap gap-2 items-center text-xs border-b border-stone-100 pb-4 no-print">
-              <span className="text-stone-500 font-serif italic">
+              <span className="text-stone-500 font-serif italic text-[11px]">
                 Saved Configurations:
               </span>
-              {scenarios.map((sc, sIdx) => (
-                <div
-                  key={sIdx}
-                  className="inline-flex items-center bg-stone-100 border border-stone-200 rounded px-2 py-1 gap-1"
-                >
-                  <button
-                    onClick={() => handleLoadScenario(sc)}
-                    className="hover:text-blue-900 font-medium transition text-[11px]"
+              {financialScenarios.map((sc, sIdx) => {
+                const isActive = (Object.keys(inputs) as (keyof PropertyInputs)[]).every(
+                  (key) => TIMELINE_KEYS.includes(key) || sc.inputs[key] === inputs[key]
+                );
+
+                return (
+                  <div
+                    key={sIdx}
+                    className={`inline-flex items-center border rounded px-2.5 py-1 gap-1.5 transition-all ${
+                      isActive 
+                        ? "bg-blue-900 border-blue-900 text-white shadow-sm font-semibold" 
+                        : "bg-white border-stone-200 text-stone-700 hover:border-stone-400"
+                    }`}
                   >
-                    {sc.name}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteScenario(sc.name)}
-                    className="text-stone-400 hover:text-red-600 font-bold ml-1 text-xs"
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
+                    <button
+                      onClick={() => handleLoadFinancialScenario(sc)}
+                      className="transition text-[11px] cursor-pointer text-left"
+                    >
+                      {sc.name}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteFinancialScenario(sc.name)}
+                      className={`font-semibold ml-1.5 text-xs cursor-pointer ${
+                        isActive ? "text-blue-200 hover:text-white" : "text-stone-400 hover:text-red-600"
+                      }`}
+                      title="Delete this scenario"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -2621,7 +4000,7 @@ export default function App() {
         <section className="bg-blue-50/50 border border-blue-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div className="border-b border-blue-200 pb-3">
             <h3 className="text-xl font-bold text-blue-900 font-serif">
-              Internal Variation & Mortgage Recasting Modeler
+              Mortgage Recasting
             </h3>
             <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
               Australian lenders contractually recalculate (recast) your minimum
@@ -2629,11 +4008,119 @@ export default function App() {
               directly paid down onto the loan principal. Move the slider below
               to divide your post-sale cash pool of{" "}
               <span className="font-bold text-blue-950">
-                ${Math.round(finances.totalPostSaleCashPool).toLocaleString()}
+                ${Math.round(finances.totalCombinedPool).toLocaleString()}
               </span>{" "}
               between pure **Interest Offset (maximum liquidity)** and
               **Principal reduction (lowest repayment cash-outflow)**.
             </p>
+            <div className="mt-4 p-3.5 bg-blue-100/40 border border-blue-200/60 rounded-lg text-xs space-y-2 text-blue-950 font-serif leading-relaxed">
+              <strong className="text-blue-900 block font-serif">💡 Calculation Context & Offset Balance Composition:</strong>
+              <p>
+                This calculation takes place <strong>at the Recasting Event Moment</strong>, which occurs after both 
+                Meryl's property and Paulan Court have settled and all cash surplus is available.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-200/40 font-mono text-[11px]">
+                <div className="bg-white/60 p-2 rounded border border-blue-100">
+                  <span className="text-stone-500 block text-[9px] font-sans font-bold">1. DAY 1 CASH CUSHION</span>
+                  <span className="font-bold text-blue-900">${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</span>
+                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Offset liquid reserve from Day 1</span>
+                </div>
+                <div className="bg-white/60 p-2 rounded border border-blue-100">
+                  <span className="text-stone-500 block text-[9px] font-sans font-bold">2. MERYL CONTRIBUTION</span>
+                  <span className="font-bold text-blue-900">${Math.round(inputs.merylContribution).toLocaleString()}</span>
+                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Granny Flat cash contribution</span>
+                </div>
+                <div className="bg-white/60 p-2 rounded border border-blue-100">
+                  <span className="text-stone-500 block text-[9px] font-sans font-bold">3. PAULAN COURT NET SALE</span>
+                  <span className="font-bold text-blue-900">${Math.round(finances.paulanNetProceeds).toLocaleString()}</span>
+                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Proceeds after paying loan & fees</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-stone-500 italic mt-1 font-sans">
+                Total combined pool at the time of calculation: <strong>${Math.round(finances.totalCombinedPool).toLocaleString()}</strong>. Depending on your choice below, a percentage of this pool is applied as a principal pay-down to recast payments, and the remainder is held in your offset account.
+              </p>
+            </div>
+          </div>
+
+          {/* MINI TRIGGER SELECTOR CONTAINER */}
+          <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-stone-100 pb-2">
+              <span className="text-[10px] font-bold text-blue-900 uppercase tracking-widest font-sans flex items-center gap-1.5">
+                <Icons.Settings className="w-3.5 h-3.5" />
+                Select Mortgage Recast Trigger Occasion
+              </span>
+              <span className="text-[10px] text-stone-400 font-serif italic">
+                Controls when lower weekly P&I payments take effect
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                onClick={() => handleInputChange("recastTriggerEvent", "day1")}
+                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
+                  inputs.recastTriggerEvent === "day1"
+                    ? "bg-blue-50/80 border-blue-400 font-medium shadow-sm text-blue-950"
+                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-blue-900">
+                  <input
+                    type="radio"
+                    checked={inputs.recastTriggerEvent === "day1"}
+                    onChange={() => {}}
+                    className="accent-blue-800 scale-90"
+                  />
+                  <span>Option A: Day 1 Immediate</span>
+                </div>
+                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
+                  Pay down loan right away using initial cash reserves.
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleInputChange("recastTriggerEvent", "gfi")}
+                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
+                  inputs.recastTriggerEvent === "gfi"
+                    ? "bg-emerald-50/80 border-emerald-400 font-medium shadow-sm text-emerald-950"
+                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-emerald-900">
+                  <input
+                    type="radio"
+                    checked={inputs.recastTriggerEvent === "gfi"}
+                    onChange={() => {}}
+                    className="accent-emerald-800 scale-90"
+                  />
+                  <span>Option B: Twin Ranges Sale</span>
+                </div>
+                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
+                  Recast when Meryl's property sale proceeds are deposited.
+                </p>
+              </button>
+
+              <button
+                onClick={() => handleInputChange("recastTriggerEvent", "paulan")}
+                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
+                  inputs.recastTriggerEvent === "paulan"
+                    ? "bg-rose-50/80 border-rose-400 font-medium shadow-sm text-rose-950"
+                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-rose-900 font-semibold">
+                  <input
+                    type="radio"
+                    checked={inputs.recastTriggerEvent === "paulan"}
+                    onChange={() => {}}
+                    className="accent-rose-800 scale-90"
+                  />
+                  <span>Option C: Double Settle</span>
+                </div>
+                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
+                  Delay recast until BOTH properties are fully settled.
+                </p>
+              </button>
+            </div>
           </div>
 
           {/* THE INTERNAL VARIATION SLIDER */}
@@ -2779,6 +4266,9 @@ export default function App() {
             </div>
           </div>
         </section>
+            </div>
+
+            <div className={`space-y-6 ${activeTab === "settles" ? "block" : "hidden print:block"}`}>
 
         {/* SECTION 5: LIVE CASH FLOW FORECAST & KEY PERFORMANCE INDICATORS */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -3474,265 +4964,9 @@ export default function App() {
           </div>
         </section>
 
-        {/* EXPLICITLY REQUESTED OVERVIEW SECTION */}
-        <section className="bg-gradient-to-br from-stone-50 to-stone-100/30 border border-stone-250 border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-200 pb-3 gap-2">
-            <div className="flex items-center gap-2">
-              <Icons.Eye className="w-5 h-5 text-slate-850" />
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider font-serif">
-                Overview & Quick Control Center
-              </h3>
-            </div>
-            <span className="text-[10px] text-stone-500 font-mono">
-              Adjust major variables and visualize outcomes instantly
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* VARIABLES SUBSECTION */}
-            <div className="lg:col-span-6 space-y-4">
-              <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block">
-                <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
-                  Major Active Variables
-                </h4>
-              </div>
-              
-              <div className="space-y-4.5 bg-white p-5 rounded-xl border border-stone-200 shadow-sm">
-                {/* 1. Forever Home Purchase Price */}
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                    <span>Forever Home Purchase Price:</span>
-                    <span className="font-mono font-bold text-blue-900">
-                      ${inputs.purchasePrice.toLocaleString()}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1000000}
-                    max={finances.maxAffordablePrice}
-                    step={10000}
-                    value={inputs.purchasePrice}
-                    onChange={(e) =>
-                      handleInputChange("purchasePrice", parseInt(e.target.value))
-                    }
-                    className="w-full accent-blue-900 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
-                    <span>Min: $1.0M</span>
-                    <span>Max: ${(finances.maxAffordablePrice / 1000000).toFixed(3)}M</span>
-                  </div>
-                </div>
-
-                {/* 2. Cash Cushion Buffer */}
-                <div className="space-y-1 pt-3 border-t border-stone-100">
-                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                    <span>Target Day 1 Cash Cushion Buffer:</span>
-                    <span className="font-mono font-bold text-indigo-900">
-                      ${inputs.offsetBuffer.toLocaleString()}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={50000}
-                    max={500000}
-                    step={5000}
-                    value={inputs.offsetBuffer}
-                    onChange={(e) =>
-                      handleInputChange("offsetBuffer", parseInt(e.target.value))
-                    }
-                    className="w-full accent-indigo-900 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
-                    <span>Min: $50k</span>
-                    <span>Max: $500k</span>
-                  </div>
-                </div>
-
-                {/* 3. Meryl's Capital Contribution */}
-                <div className="space-y-1 pt-3 border-t border-stone-100">
-                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                    <span>Meryl's Capital Contribution:</span>
-                    <span className="font-mono font-bold text-emerald-800">
-                      ${inputs.merylContribution.toLocaleString()}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.round(finances.merylNetProceeds)}
-                    step={5000}
-                    value={inputs.merylContribution}
-                    onChange={(e) =>
-                      handleInputChange("merylContribution", parseInt(e.target.value))
-                    }
-                    className="w-full accent-emerald-600 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
-                    <span>Min: $0</span>
-                    <span>Max Capacity: ${Math.round(finances.merylNetProceeds).toLocaleString()}</span>
-                  </div>
-                </div>
-
-                {/* 4. Weekly Extra Savings Rate */}
-                <div className="space-y-1 pt-3 border-t border-stone-100">
-                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                    <span>Weekly Extra Savings Rate:</span>
-                    <span className="font-mono font-bold text-teal-800">
-                      ${inputs.weeklySavings}/wk
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={5000}
-                    step={100}
-                    value={inputs.weeklySavings}
-                    onChange={(e) =>
-                      handleInputChange("weeklySavings", parseInt(e.target.value))
-                    }
-                    className="w-full accent-teal-600 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[9px] text-stone-400 font-mono">
-                    <span>Min: $0/wk</span>
-                    <span>Max: $5.0k/wk</span>
-                  </div>
-                </div>
-
-                {/* 5. Recast Slider (Smaller footprint) */}
-                <div className="space-y-1 pt-3 border-t border-stone-100">
-                  <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                    <span>Joint Post-Sale Cash Recast Allocation:</span>
-                    <span className="font-mono font-bold text-amber-800 text-[11px]">
-                      {inputs.internalVariationPct}% Paydown / {100 - inputs.internalVariationPct}% Offset
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={2.5}
-                    value={inputs.internalVariationPct}
-                    onChange={(e) =>
-                      handleInputChange("internalVariationPct", parseFloat(e.target.value))
-                    }
-                    className="w-full accent-amber-600 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-[8px] text-stone-400 uppercase tracking-tight font-sans">
-                    <span>0% (Full Liquid Offset)</span>
-                    <span>100% (Full Recast Principal)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* RESULTS SUBSECTION */}
-            <div className="lg:col-span-6 space-y-4">
-              <div className="bg-stone-100 px-3 py-1.5 rounded-md border border-stone-200 inline-block">
-                <h4 className="text-[10px] font-bold text-stone-700 font-serif uppercase tracking-wider">
-                  Major Simulated Outcomes
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Years to Offset Forever Home */}
-                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
-                      Forever Home Offset Time
-                    </span>
-                    <p className="text-lg font-bold text-emerald-800 mt-2 font-serif leading-tight">
-                      {finances.fhOffsetYears !== "15+" ? (
-                        <>
-                          {finances.fhOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
-                          <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
-                            {getMilestoneDateStr(finances.milestoneFHOffset.week)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-amber-800">15+ Years (Not Offset)</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-stone-100 flex justify-between items-center text-[10.5px] font-serif text-stone-500">
-                    <span>Interest Paid:</span>
-                    <span className="font-mono font-bold text-emerald-800">
-                      ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Years to Complete Portfolio Freedom */}
-                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
-                      Complete Portfolio Freedom
-                    </span>
-                    <p className="text-lg font-bold text-teal-800 mt-2 font-serif leading-tight">
-                      {finances.bothOffsetYears !== "15+" ? (
-                        <>
-                          {finances.bothOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
-                          <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
-                            {getMilestoneDateStr(finances.milestoneFernOffset.week)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-amber-800">15+ Years (Not Fully Offset)</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-stone-100 space-y-1 text-[10px] font-serif text-stone-500">
-                    <div className="flex justify-between items-center text-[9.5px]">
-                      <span>Fern St Interest:</span>
-                      <span className="font-mono text-teal-700">
-                        ${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center font-bold text-stone-600 border-t border-stone-100/60 pt-0.5">
-                      <span>Total Interest Paid:</span>
-                      <span className="font-mono text-slate-800">
-                        ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Uncommitted Discretionary Cash */}
-                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
-                      Uncommitted Discretionary Cash
-                    </span>
-                    <p className={`text-lg font-bold mt-2 font-mono ${finances.leftoverDiscretionaryCash >= 0 ? "text-slate-800" : "text-rose-700"}`}>
-                      ${Math.round(finances.leftoverDiscretionaryCash).toLocaleString()}<span className="text-[11px] text-stone-500 font-sans font-normal">/wk</span>
-                    </p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500">
-                    {finances.leftoverDiscretionaryCash >= 0 ? (
-                      <span className="text-emerald-700 font-medium font-sans">✓ Positive Cash Flow</span>
-                    ) : (
-                      <span className="text-rose-600 font-semibold font-sans">⚠️ Deficit limit breached!</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kept Inside Offset (Liquid) Balance */}
-                <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
-                      Kept Inside Offset (Liquid)
-                    </span>
-                    <p className="text-lg font-bold text-amber-800 mt-2 font-mono">
-                      ${Math.round(finances.keptInOffsetAccount).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="mt-3 pt-2 border-t border-stone-100 text-[10px] font-serif text-stone-500 leading-tight">
-                    Funds remaining highly liquid inside offset following recasting choice.
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+            </div> {/* Closing When the dust settles tab wrapper */}
+          </div> {/* Closing Right Column */}
+        </div> {/* Closing WORKSPACE MAIN GRID */}
 
         {/* SECTION 7: MULTIGENERATIONAL STUDY & INTEL NOTEBOOK */}
         <section className="bg-stone-100/70 border border-stone-200 rounded-xl p-5 shadow-sm space-y-4 print-card">

@@ -27,6 +27,10 @@ export interface PropertyInputs {
   
   internalVariationPct: number;
   depletionPriorityToggle: "paulan" | "fern";
+  merylRentCostPerWeek: number;
+  merylRentingExtraDays: number;
+  recastTriggerEvent: "paulan" | "gfi" | "day1";
+  merylRentStartOffset: number;
 }
 
 export interface PropertyScenario {
@@ -38,7 +42,7 @@ export interface ActiveInteraction {
   type: string;
   field: keyof PropertyInputs;
   startX: number;
-  startVal: number;
+  startVals: PropertyInputs;
 }
 
 export interface SimulationDataPoint {
