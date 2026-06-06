@@ -228,6 +228,7 @@ const DEFAULT_INPUTS: PropertyInputs = {
   merylRentingExtraDays: 0,        // Extra rental period extensions
   recastTriggerEvent: "gfi",       // Default recast trigger event
   merylRentStartOffset: 0,
+  gfiStartOffset: 1,               // GFI default scheduled offset is 1 day after Twin Ranges settlement finalizes
 };
 
 // Helper to consolidate, clamp and adjust financial parameters dynamically in response to slider changes
@@ -237,14 +238,22 @@ const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
   const totalAcquisitionCost = newInputs.purchasePrice + stampDuty + 5000;
   const minCashRequiredForSettlement = Math.max(0, totalAcquisitionCost - 1500000);
 
-  // Dynamic maximum buffer clamp (starting balance minus mandatory settlement outlay)
-  const maxRemainingCash = Math.max(0, 619830 - minCashRequiredForSettlement);
-  const buffer = Math.min(maxRemainingCash, Math.max(0, newInputs.offsetBuffer));
-
   // Dynamic merylNetProceeds clamping
   const merylSale = newInputs.merylSalePrice ?? 730000;
   const merylNet = Math.max(0, merylSale - (merylSale * 0.025));
   const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 600000));
+
+  // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
+  const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 90) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
+  const gfiStart = merylSettleEnd + (newInputs.gfiStartOffset ?? 1);
+  const fhSettleEnd = (newInputs.fhStartDelay ?? 123) + (newInputs.fhSettleDays ?? 60);
+  const gfiBeforeFHSettle = gfiStart <= fhSettleEnd;
+
+  const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? merylContribution : 0);
+
+  // Dynamic maximum buffer clamp (starting balance minus mandatory settlement outlay)
+  const maxRemainingCash = Math.max(0, startingCashAtFHSettle - minCashRequiredForSettlement);
+  const buffer = Math.min(maxRemainingCash, Math.max(0, newInputs.offsetBuffer));
 
   return {
     ...newInputs,
@@ -256,6 +265,7 @@ const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     merylRentingExtraDays: newInputs.merylRentingExtraDays ?? 0,
     recastTriggerEvent: newInputs.recastTriggerEvent ?? "gfi",
     merylRentStartOffset: newInputs.merylRentStartOffset ?? 0,
+    gfiStartOffset: newInputs.gfiStartOffset ?? 1,
   };
 };
 
@@ -273,7 +283,8 @@ const TIMELINE_KEYS: (keyof PropertyInputs)[] = [
   "paulanCampaignDays",
   "paulanSettleDays",
   "merylRentingExtraDays",
-  "merylRentStartOffset"
+  "merylRentStartOffset",
+  "gfiStartOffset"
 ];
 
 export default function App() {
@@ -487,8 +498,13 @@ export default function App() {
     const merylRentEnd = moveEnd + inputs.merylRentingExtraDays;
     const merylRentDays = Math.max(1, merylRentEnd - merylRentStart);
 
+    // GFI capital transfer (1-day event relative to merylSettleEnd by gfiStartOffset)
+    const gfiStart = merylSettleEnd + inputs.gfiStartOffset;
+    const gfiEnd = gfiStart + 1;
+
     const maxDuration = Math.max(
       merylSettleEnd,
+      gfiEnd,
       moveEnd,
       paulanSettleEnd,
       merylRentEnd,
@@ -542,6 +558,8 @@ export default function App() {
       merylCampaignEnd,
       merylSettleStart,
       merylSettleEnd,
+      gfiStart,
+      gfiEnd,
       merylRentStart,
       merylRentEnd,
       merylRentDays,
@@ -566,6 +584,7 @@ export default function App() {
         merylPrepEnd: addDays(merylPrepEnd),
         merylContract: addDays(merylCampaignEnd),
         merylSettle: addDays(merylSettleEnd),
+        gfiDate: addDays(gfiStart),
         merylRentStart: addDays(merylRentStart),
         merylRentEnd: addDays(merylRentEnd),
         fhContract: addDays(fhContractSign),
@@ -589,8 +608,12 @@ export default function App() {
     const totalAcquisitionCost =
       inputs.purchasePrice + stampDuty + transactionCosts;
 
+    // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
+    const gfiBeforeFHSettle = timeline.gfiStart <= timeline.fhSettleEnd;
+    const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
+
     // Absolute physical upper bound limits based on maximum borrowing facility and cash offsets using rate
-    const maxAffordablePrice = Math.floor((1500000 - 5000 + 619830) / (1 + rate));
+    const maxAffordablePrice = Math.floor((1500000 - 5000 + startingCashAtFHSettle) / (1 + rate));
 
     // Mandatory cash gap representing settlement friction above the maximum borrowing capacity
     const minCashRequiredForSettlement = Math.max(
@@ -599,25 +622,27 @@ export default function App() {
     );
 
     // Ideal remaining cushion buffer: we want to preserve inputs.offsetBuffer if possible.
-    // The cash we can deploy: starting cash ($619,830) minus the buffer.
-    const idealPull = Math.max(0, 619830 - inputs.offsetBuffer);
+    // The cash we can deploy: starting cash minus the buffer.
+    const idealPull = Math.max(0, startingCashAtFHSettle - inputs.offsetBuffer);
 
     // The actual cash we must pull on Day 1 is the larger of the minimum needed to settle and what we choose to pull
     let actualPull = Math.max(minCashRequiredForSettlement, idealPull);
 
     // If actualPull exceeds our physical starting cash constraint, then the purchase is unaffordable.
-    // We clamp actualPull to starting cash $619,830.
-    actualPull = Math.min(619830, actualPull);
+    // We clamp actualPull to starting cash.
+    actualPull = Math.min(startingCashAtFHSettle, actualPull);
 
     // Programmatic Waterfall for the starting offsets based on user-selectable priority toggle:
     let paulanOffsetPulled = 0;
     let fernOffsetPulled = 0;
 
+    const maxFernOffsetAvailable = 238374 + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
+
     if (inputs.depletionPriorityToggle === "paulan") {
       paulanOffsetPulled = Math.min(381456, actualPull);
-      fernOffsetPulled = Math.min(238374, Math.max(0, actualPull - paulanOffsetPulled));
+      fernOffsetPulled = Math.min(maxFernOffsetAvailable, Math.max(0, actualPull - paulanOffsetPulled));
     } else {
-      fernOffsetPulled = Math.min(238374, actualPull);
+      fernOffsetPulled = Math.min(maxFernOffsetAvailable, actualPull);
       paulanOffsetPulled = Math.min(381456, Math.max(0, actualPull - fernOffsetPulled));
     }
 
@@ -632,10 +657,10 @@ export default function App() {
     // 20% Deposit of Loan Value targeting standard bank constraints
     const targetDeposit20PctOfLoan = loanRequired * 0.2;
 
-    // Remaining Day 1 cash cushion left over (total starting cash is $619,830 minus actual cash paid out)
+    // Remaining Day 1 cash cushion left over (total starting cash is startingCashAtFHSettle minus actual cash paid out)
     const remainingDay1CashCushion = Math.max(
       0,
-      619830 - (totalAcquisitionCost - loanRequired)
+      startingCashAtFHSettle - (totalAcquisitionCost - loanRequired)
     );
 
     // Strategy Validation: Remaining buffer target safety check
@@ -672,7 +697,7 @@ export default function App() {
     const merylCashSurplus = Math.max(0, merylNetProceeds - inputs.merylContribution);
 
     // Post-Settlement Liquid Injection Pool: Include both remaining day 1 cash cushion and post-sale cash
-    const totalPostSaleCashPool = paulanNetProceeds + inputs.merylContribution;
+    const totalPostSaleCashPool = paulanNetProceeds + (gfiBeforeFHSettle ? 0 : inputs.merylContribution);
     const totalCombinedPool = remainingDay1CashCushion + totalPostSaleCashPool;
 
     // Internal Variation Split:
@@ -913,6 +938,7 @@ export default function App() {
       const fhOpened = dayOffset >= timeline.fhSettleEnd;
       const merylSettled = dayOffset >= timeline.merylSettleEnd;
       const paulanSettled = dayOffset >= timeline.paulanSettleEnd;
+      const gfiOccurred = dayOffset >= timeline.gfiStart;
 
       // Recast active trigger checking
       let isRecast = false;
@@ -920,9 +946,9 @@ export default function App() {
         if (inputs.recastTriggerEvent === "day1") {
           isRecast = true;
         } else if (inputs.recastTriggerEvent === "gfi") {
-          isRecast = merylSettled;
+          isRecast = gfiOccurred;
         } else if (inputs.recastTriggerEvent === "paulan") {
-          isRecast = merylSettled && paulanSettled;
+          isRecast = gfiOccurred && paulanSettled;
         }
       }
 
@@ -938,7 +964,7 @@ export default function App() {
       // Offset tracking:
       // FH offset starting point
       let fhOffsetRaw = fhOpened ? remainingDay1CashCushion : 0;
-      if (fhOpened && merylSettled) {
+      if (fhOpened && gfiOccurred && !gfiBeforeFHSettle) {
         fhOffsetRaw += inputs.merylContribution;
       }
       if (fhOpened && paulanSettled) {
@@ -1058,6 +1084,7 @@ export default function App() {
       remainingDay1CashCushion,
       minCashRequiredForSettlement,
       isBufferCompromised,
+      gfiBeforeFHSettle,
       paulanOffsetPulled,
       fernOffsetPulled,
       milestoneRecast,
@@ -1188,7 +1215,12 @@ export default function App() {
         const field = activeInteraction.field;
         const vals = activeInteraction.startVals;
         const startVal = vals[field] ?? 0;
-        let newVal = Math.max(0, startVal + deltaDays);
+        let newVal = startVal + deltaDays;
+        if (field !== "merylRentStartOffset" && field !== "gfiStartOffset") {
+          newVal = Math.max(0, newVal);
+        } else {
+          newVal = Math.max(-180, Math.min(250, newVal));
+        }
 
         if (activeInteraction.type === "resize") {
           if (field === "merylPrepDays") newVal = Math.max(14, Math.min(180, newVal));
@@ -2430,12 +2462,66 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* GFI Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
+                      <span className="flex items-center gap-1 text-emerald-700">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block font-sans"></span>
+                        4. GFI - Granny Flat Investment Transfer - ({timeline.dates.gfiDate})
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-stone-400 font-sans mr-1">Shift Offset:</span>
+                        <input
+                          type="number"
+                          value={inputs.gfiStartOffset}
+                          onChange={(e) =>
+                            handleInputChange(
+                              "gfiStartOffset",
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-emerald-50/20 h-7 rounded-md border border-emerald-250/30 relative flex items-center overflow-hidden">
+                      <div
+                        onMouseDown={(e) =>
+                          startGanttDrag(e, "gfiStartOffset", "shift")
+                        }
+                        onTouchStart={(e) =>
+                          startGanttDrag(e, "gfiStartOffset", "shift")
+                        }
+                        className="bg-emerald-600 border-r-4 border-emerald-800 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        style={{
+                          backgroundColor: "#16a34a",
+                          marginLeft: `${
+                            (timeline.gfiStart /
+                              timeline.totalDurationDays) *
+                            100
+                          }%`,
+                          width: `${
+                            Math.max(4.0, (1 / timeline.totalDurationDays) * 100)
+                          }%`,
+                        }}
+                      >
+                        <div className="absolute left-0 top-0 bottom-0 flex items-center pointer-events-none pl-1">
+                          <Icons.DragHandle />
+                        </div>
+                        <span className="truncate pl-3 text-white">
+                          GFI Contribution Received (${inputs.merylContribution.toLocaleString()})
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Meryl Renting Bar */}
                   <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-505 text-stone-500 font-semibold font-serif">
-                      <span className="flex items-center gap-1 text-amber-700">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
-                        4. Meryl Renting Period (Temporary Lodging) - (
+                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
+                      <span className="flex items-center gap-1 text-purple-700">
+                        <span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span>
+                        5. Meryl Renting Period (Temporary Lodging) - (
                         {getGanttDateStr(timeline.merylRentStart)} -{" "}
                         {getGanttDateStr(timeline.merylRentEnd)})
                       </span>
@@ -2452,12 +2538,12 @@ export default function App() {
                               parseInt(e.target.value) || 0
                             )
                           }
-                          className="w-12 text-center text-xs font-bold font-mono text-amber-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          className="w-12 text-center text-xs font-bold font-mono text-purple-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
                         />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
+                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
                       </div>
                     </div>
-                    <div className="w-full bg-amber-50/20 h-7 rounded-md border border-amber-200/40 relative flex items-center overflow-hidden">
+                    <div className="w-full bg-purple-50/20 h-7 rounded-md border border-purple-200/40 relative flex items-center overflow-hidden">
                       <div
                         onMouseDown={(e) =>
                           startGanttDrag(e, "merylRentStartOffset", "shift")
@@ -2465,9 +2551,9 @@ export default function App() {
                         onTouchStart={(e) =>
                           startGanttDrag(e, "merylRentStartOffset", "shift")
                         }
-                        className="border-r-4 border-amber-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-amber-950 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
+                        className="border-r-4 border-purple-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing opacity-90"
                         style={{
-                          backgroundColor: "#f59e0b",
+                          backgroundColor: "#a855f7",
                           marginLeft: `${
                             (Math.max(0, timeline.merylRentStart) /
                               timeline.totalDurationDays) *
@@ -2493,7 +2579,7 @@ export default function App() {
                         >
                           <Icons.DragHandle />
                         </div>
-                        <span className="truncate pr-1">
+                        <span className="truncate pr-1 text-white">
                           Lodging Rental Period (~{Math.round(timeline.merylRentDays / 7)} Weeks)
                         </span>
                         <div
@@ -3625,6 +3711,18 @@ export default function App() {
             </div>
 
             {/* Dynamic Alert Banner for Target Buffer Compromise */}
+            {finances.gfiBeforeFHSettle && (
+              <div className="bg-[#0c2a18] border-l-4 border-emerald-600 text-emerald-50 p-4 rounded-r-lg text-xs font-serif leading-relaxed space-y-1 shadow-sm mb-4">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
+                  <span>GFI Early Settlement Advantage Active</span>
+                </div>
+                <p className="opacity-90">
+                  Because the <strong>GFI Event (Meryl's Contribution Transfer)</strong> settles before the Forever Home transaction, her capital contribution of <strong className="font-mono text-emerald-300">${inputs.merylContribution.toLocaleString()}</strong> is received early and counted towards your Day 1 offset buffer reserves. This secures your available cash buffer during the purchase transaction!
+                </p>
+              </div>
+            )}
+
             {finances.isBufferCompromised && (
               <div className="bg-[#590d0d] border-l-4 border-red-600 text-red-50 p-4 rounded-r-lg text-xs font-serif leading-relaxed space-y-1 shadow-md animate-pulse">
                 <div className="flex items-center gap-1.5 font-bold text-red-100">
@@ -3678,13 +3776,21 @@ export default function App() {
                       <span className="text-stone-300">Fern St Offset Cash</span>
                       <span className="font-mono font-semibold text-emerald-400">${Math.round(finances.fernOffsetPulled).toLocaleString()}</span>
                     </div>
-                    <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-emerald-500 h-full transition-all" 
-                        style={{ width: `${(finances.fernOffsetPulled / 238374) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-[9px] text-stone-500 text-right">Drawing {Math.round((finances.fernOffsetPulled / 238374) * 100)}% of $238k</div>
+                    {(() => {
+                      const maxFernOffset = 238374 + (finances.gfiBeforeFHSettle ? inputs.merylContribution : 0);
+                      const pct = maxFernOffset > 0 ? Math.round((finances.fernOffsetPulled / maxFernOffset) * 100) : 0;
+                      return (
+                        <>
+                          <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-emerald-500 h-full transition-all" 
+                              style={{ width: `${pct}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-[9px] text-stone-500 text-right">Drawing {pct}% of ${(maxFernOffset / 1000).toFixed(0)}k</div>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* New Primary Mortgage */}

@@ -31,6 +31,7 @@ export interface PropertyInputs {
   merylRentingExtraDays: number;
   recastTriggerEvent: "paulan" | "gfi" | "day1";
   merylRentStartOffset: number;
+  gfiStartOffset: number;
 }
 
 export interface PropertyScenario {
