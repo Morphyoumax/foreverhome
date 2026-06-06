@@ -177,6 +177,22 @@ const Icons = {
       />
     </svg>
   ),
+  Download: ({ className = "w-5 h-5" }: { className?: string }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+      />
+    </svg>
+  ),
   DragHandle: () => (
     <div className="flex flex-col gap-0.5 px-1 cursor-ew-resize hover:bg-black/15 h-full justify-center items-center rounded select-none no-print">
       <span className="w-0.5 h-3 bg-slate-700"></span>
@@ -373,6 +389,8 @@ export default function App() {
   const [activeInteraction, setActiveInteraction] = useState<ActiveInteraction | null>(null);
   const [isPaulanLinkedHovered, setIsPaulanLinkedHovered] = useState(false);
   const [activeTab, setActiveTab] = useState<"timeline" | "mortgage" | "settles" | "propertyResearch">("timeline");
+  const [trajectoryTableMode, setTrajectoryTableMode] = useState<"key" | "all">("key");
+  const [trajectorySearch, setTrajectorySearch] = useState("");
   const [researchUrlOrAddress, setResearchUrlOrAddress] = useState("");
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
@@ -796,7 +814,7 @@ export default function App() {
     const rWeeklyFHSim = rWeekly;
     const rWeeklyFernSim = 0.0595 / 52;
 
-    for (let w = 0; w <= 15 * 52; w++) {
+    for (let w = 0; w <= 30 * 52; w++) {
       if (simOffsetFH >= simLoanFH && fhNeutralizedWeek === -1) {
         fhNeutralizedWeek = w;
         milestoneFHOffset = {
@@ -874,7 +892,7 @@ export default function App() {
         }
       }
 
-      if (w % 13 === 0 || w === 15 * 52) {
+      if (w % 13 === 0 || w === 30 * 52) {
         simulationData.push({
           week: w,
           year: (w / 52).toFixed(1),
@@ -889,14 +907,14 @@ export default function App() {
       }
     }
 
-    // Set fallback if offset conditions are not fully met within 15 years
+    // Set fallback if offset conditions are not fully met within 30 years
     if (fhNeutralizedWeek === -1) {
       milestoneFHOffset = {
         fhLoan: Math.round(simLoanFH),
         fhOffset: Math.round(simOffsetFH),
         fernLoan: Math.round(simLoanFern),
         fernOffset: Math.round(simOffsetFern),
-        week: 15 * 52,
+        week: 30 * 52,
       };
     }
     if (bothNeutralizedWeek === -1) {
@@ -905,7 +923,7 @@ export default function App() {
         fhOffset: Math.round(simOffsetFH),
         fernLoan: Math.round(simLoanFern),
         fernOffset: Math.round(simOffsetFern),
-        week: 15 * 52,
+        week: 30 * 52,
       };
     }
 
@@ -1053,6 +1071,114 @@ export default function App() {
       });
     }
 
+    // Generate programmatic Interest Rate vs. Weekly Savings Sensitivity Matrix
+    const rateDeltas = [0, 1.0, 2.0, 3.0]; // Current, +1%, +2%, +3%
+    const savingsMultipliers = [0.75, 1.0, 1.25]; // -25%, Current, +25%
+    const sensitivityMatrix = rateDeltas.map((dRate) => {
+      const testRate = inputs.interestRate + dRate;
+      const rWeeklyTest = testRate / 100 / 52;
+      const nWeeks = 30 * 52;
+
+      // Recalculate initial pre-recast weekly payment for this rate
+      const testInitialPayment =
+        loanRequired > 0
+          ? (loanRequired * rWeeklyTest * Math.pow(1 + rWeeklyTest, nWeeks)) /
+            (Math.pow(1 + rWeeklyTest, nWeeks) - 1)
+          : 0;
+
+      // Recalculate recast post-recast weekly payment for this rate
+      const testRecastPayment =
+        recastForeverHomeLoanPrincipal > 0
+          ? (recastForeverHomeLoanPrincipal *
+              rWeeklyTest *
+              Math.pow(1 + rWeeklyTest, nWeeks)) /
+            (Math.pow(1 + rWeeklyTest, nWeeks) - 1)
+          : 0;
+
+      const cells = savingsMultipliers.map((mSavings) => {
+        const testWeeklySavings = inputs.weeklySavings * mSavings;
+
+        let simFH = recastForeverHomeLoanPrincipal;
+        let simOffFH = recastOffsetBalance;
+        let simFern = ACCOUNT_BALANCES.fernLoan;
+        let simOffFern = 0;
+
+        let testFHNeutralizedWeek = -1;
+        let testBothNeutralizedWeek = -1;
+
+        const rWeeklyFHTest = rWeeklyTest;
+        const rWeeklyFernTest = 0.0595 / 52;
+
+        for (let w = 0; w <= 30 * 52; w++) {
+          if (simOffFH >= simFH && testFHNeutralizedWeek === -1) {
+            testFHNeutralizedWeek = w;
+          }
+          if (
+            simOffFH >= simFH &&
+            simOffFern >= simFern &&
+            testBothNeutralizedWeek === -1
+          ) {
+            testBothNeutralizedWeek = w;
+          }
+
+          const fhInterest = Math.max(0, simFH - simOffFH) * rWeeklyFHTest;
+          const fernInterest = Math.max(0, simFern - simOffFern) * rWeeklyFernTest;
+
+          const fhPrincipalReduction = Math.max(0, testRecastPayment - fhInterest);
+          simFH = Math.max(0, simFH - fhPrincipalReduction);
+
+          const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
+          simFern = Math.max(0, simFern - fernPrincipalReduction);
+
+          let remainingSavings = testWeeklySavings;
+
+          if (simOffFH < simFH) {
+            const space = simFH - simOffFH;
+            const deposit = Math.min(remainingSavings, space);
+            simOffFH += deposit;
+            remainingSavings -= deposit;
+          }
+
+          if (remainingSavings > 0) {
+            if (simOffFern < simFern) {
+              const space = simFern - simOffFern;
+              simOffFern += Math.min(remainingSavings, space);
+            } else {
+              simOffFern = simFern;
+            }
+          }
+
+          if (simOffFH > simFH) {
+            const excessCash = simOffFH - simFH;
+            simOffFH = simFH;
+            if (simOffFern < simFern) {
+              const space = simFern - simOffFern;
+              simOffFern += Math.min(excessCash, space);
+            } else {
+              simOffFern = simFern;
+            }
+          }
+        }
+
+        return {
+          rateDelta: dRate,
+          savingsMultiplier: mSavings,
+          rateLabel: dRate === 0 ? "Current" : `+${dRate.toFixed(1)}%`,
+          savingsLabel: mSavings === 1.0 ? "Current" : mSavings === 0.75 ? "-25%" : "+25%",
+          fhYears: testFHNeutralizedWeek !== -1 ? (testFHNeutralizedWeek / 52).toFixed(1) : "30+",
+          bothYears: testBothNeutralizedWeek !== -1 ? (testBothNeutralizedWeek / 52).toFixed(1) : "30+",
+        };
+      });
+
+      return {
+        rateDelta: dRate,
+        testRate,
+        testInitialPayment,
+        testRecastPayment,
+        cells,
+      };
+    });
+
     return {
       stampDuty,
       transactionCosts,
@@ -1093,12 +1219,14 @@ export default function App() {
       fhInterestAtOffset,
       fernInterestAtBothOffset,
       combinedInterestAtBothOffset: fhInterestAtBothOffset + fernInterestAtBothOffset,
+      fhNeutralizedWeek,
+      bothNeutralizedWeek,
       fhOffsetYears:
-        fhNeutralizedWeek !== -1 ? (fhNeutralizedWeek / 52).toFixed(1) : "15+",
+        fhNeutralizedWeek !== -1 ? (fhNeutralizedWeek / 52).toFixed(1) : "30+",
       bothOffsetYears:
         bothNeutralizedWeek !== -1
           ? (bothNeutralizedWeek / 52).toFixed(1)
-          : "15+",
+          : "30+",
       simulationData,
       transitionWeeksData,
       cumulativeTransitionInterest,
@@ -1106,6 +1234,7 @@ export default function App() {
       totalMerylRentInTransition,
       transitionMerylWeeks,
       transitionDoubleMortgageWeeks,
+      sensitivityMatrix,
     };
   }, [inputs, timeline]);
 
@@ -1321,6 +1450,30 @@ export default function App() {
 
   const handleDeleteTimelineScenario = (name: string) => {
     setTimelineScenarios((prev) => prev.filter((s) => s.name !== name));
+  };
+
+  const handleExportCsv = () => {
+    // Generate CSV contents
+    const headers = ["Week", "Year", "Forever Home Loan ($)", "Forever Home Offset ($)", "Fern St Loan ($)", "Fern St Offset ($)", "Net Portfolio Debt ($)"];
+    const rows = finances.simulationData.map(d => [
+      d.week,
+      d.year,
+      d.loanFH,
+      d.offsetFH,
+      d.loanFern,
+      d.offsetFern,
+      d.netDebt
+    ]);
+    const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+    
+    // Trigger download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `Warragul_Portfolio_Trajectory_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleExportHtmlReport = () => {
@@ -1924,7 +2077,7 @@ export default function App() {
                         Forever Home Offset Time
                       </span>
                       <p className="text-lg font-bold text-emerald-800 mt-2 font-serif leading-tight">
-                        {finances.fhOffsetYears !== "15+" ? (
+                        {finances.fhOffsetYears !== "30+" ? (
                           <>
                             {finances.fhOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
                             <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
@@ -1932,7 +2085,7 @@ export default function App() {
                             </span>
                           </>
                         ) : (
-                          <span className="text-amber-800">15+ Years (Not Offset)</span>
+                          <span className="text-amber-800">30+ Years (Not Offset)</span>
                         )}
                       </p>
                     </div>
@@ -1951,7 +2104,7 @@ export default function App() {
                         Complete Portfolio Freedom
                       </span>
                       <p className="text-lg font-bold text-teal-800 mt-2 font-serif leading-tight">
-                        {finances.bothOffsetYears !== "15+" ? (
+                        {finances.bothOffsetYears !== "30+" ? (
                           <>
                             {finances.bothOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
                             <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
@@ -1959,7 +2112,7 @@ export default function App() {
                             </span>
                           </>
                         ) : (
-                          <span className="text-amber-800">15+ Years (Not Offset)</span>
+                          <span className="text-amber-800">30+ Years (Not Offset)</span>
                         )}
                       </p>
                     </div>
@@ -4786,15 +4939,14 @@ export default function App() {
           </div>
         </section>
 
-        {/* SECTION 6: 15-YEAR TRAJECTORY PROJECTION CHART */}
+        {/* SECTION 6: FINANCIAL PROJECTION TRAJECTORY */}
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div>
             <h3 className="text-lg font-bold text-blue-900 font-serif">
-              15-Year Financial Projection Trajectory
+              Portfolio Financial Projection Trajectory (Up to 30 Years)
             </h3>
             <p className="text-xs text-stone-500 mt-1 font-serif">
-              Models the compounding impact of weekly extra offset accumulations
-              and the Paulan proceeds release.
+              Models the compounding impact of weekly extra offset accumulations and the Paulan proceeds release dynamically scaled to neutralize debt.
             </p>
           </div>
 
@@ -4802,7 +4954,7 @@ export default function App() {
           <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 relative">
             <div className="absolute top-4 right-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-serif font-bold text-blue-950">
               <div className="flex items-center gap-1">
-                <span className="w-2.5 h-0.5 bg-purple-705 bg-purple-700 inline-block"></span>
+                <span className="w-2.5 h-0.5 bg-purple-700 inline-block"></span>
                 <span>Primary Home Loan</span>
               </div>
               <div className="flex items-center gap-1">
@@ -4820,7 +4972,8 @@ export default function App() {
               className="w-full h-auto overflow-visible select-none"
             >
               {(() => {
-                const data = finances.simulationData;
+                const maxDisplayYear = finances.bothNeutralizedWeek !== -1 ? Math.max(5, Math.ceil(finances.bothNeutralizedWeek / 52)) : 30;
+                const data = finances.simulationData.filter((d) => parseFloat(d.year) <= maxDisplayYear);
                 if (!data || data.length === 0) return null;
 
                 const maxDataVal =
@@ -4853,6 +5006,26 @@ export default function App() {
                   fernLoanPoints += `${x},${getY(d.loanFern)} `;
                   fernOffsetPoints += `${x},${getY(d.offsetFern)} `;
                 });
+
+                // Generate year ticks dynamically
+                let xTickStep = 5;
+                if (maxDisplayYear <= 6) {
+                  xTickStep = 1;
+                } else if (maxDisplayYear <= 12) {
+                  xTickStep = 2;
+                } else if (maxDisplayYear <= 24) {
+                  xTickStep = 5;
+                } else {
+                  xTickStep = 5;
+                }
+
+                const xTicks: number[] = [];
+                for (let y = 0; y <= maxDisplayYear; y += xTickStep) {
+                  xTicks.push(y);
+                }
+                if (xTicks[xTicks.length - 1] !== maxDisplayYear && maxDisplayYear - xTicks[xTicks.length - 1] >= 1.5) {
+                  xTicks.push(maxDisplayYear);
+                }
 
                 return (
                   <g>
@@ -4889,10 +5062,10 @@ export default function App() {
                       );
                     })}
 
-                    {/* X-Axis increments (5 year ticks with Year labels) */}
-                    {[0, 5, 10, 15].map((yr) => {
-                      const x = 60 + (yr / 15) * 700;
-                      const calYear = 2026 + yr;
+                    {/* X-Axis increments dynamically */}
+                    {xTicks.map((yr) => {
+                      const x = 60 + (yr / maxDisplayYear) * 700;
+                      const calYear = 2026 + Math.round(yr);
                       return (
                         <g key={yr}>
                           <line
@@ -4989,7 +5162,7 @@ export default function App() {
             {/* CARD 2: FOREVER OFFSET */}
             <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-150 shadow-sm flex flex-col justify-between space-y-3">
               <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-900 block font-serif border-b border-emerald-200 pb-1.5">
-                {finances.fhOffsetYears !== "15+" ? `Forever Offset — ${getMilestoneDateStr(finances.milestoneFHOffset.week)}` : `Forever Offset — 15+ Years`}
+                {finances.fhOffsetYears !== "30+" ? `Forever Offset — ${getMilestoneDateStr(finances.milestoneFHOffset.week)}` : `Forever Offset — 30+ Years`}
               </span>
               <div className="space-y-2 text-xs font-serif flex-1 flex flex-col justify-between">
                 <div className="space-y-2">
@@ -5026,7 +5199,7 @@ export default function App() {
             {/* CARD 3: FERN ST OFFSET */}
             <div className="bg-teal-50/50 p-4 rounded-xl border border-teal-150 shadow-sm flex flex-col justify-between space-y-3">
               <span className="text-[11px] uppercase font-bold tracking-wider text-teal-950 block font-serif border-b border-teal-205 border-teal-200 pb-1.5">
-                {finances.bothOffsetYears !== "15+" ? `Fern Offset — ${getMilestoneDateStr(finances.milestoneFernOffset.week)}` : `Fern Offset — 15+ Years`}
+                {finances.bothOffsetYears !== "30+" ? `Fern Offset — ${getMilestoneDateStr(finances.milestoneFernOffset.week)}` : `Fern Offset — 30+ Years`}
               </span>
               <div className="space-y-2 text-xs font-serif flex-1 flex flex-col justify-between">
                 <div className="space-y-2">
@@ -5061,79 +5234,280 @@ export default function App() {
             </div>
           </div>
 
-          {/* TABLE TRAJECTORY INDEX */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-4">
-            <div className="lg:col-span-4 overflow-hidden rounded-xl border border-stone-200 shadow-sm bg-white flex flex-col justify-between">
-              <table className="w-full text-left text-xs text-stone-600 h-full">
-                <thead className="bg-stone-50 text-[10px] uppercase text-stone-505 text-stone-500 font-bold tracking-wider font-serif border-b border-stone-200">
-                  <tr>
-                    <th className="p-3">Simulation Epoch</th>
-                    <th className="p-3">Primary Offset</th>
-                    <th className="p-3">Portfolio Net Debt</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 font-mono text-[11px] flex-1">
-                  {finances.simulationData
-                    .filter(
-                      (_, idx) =>
-                        idx === 0 || idx === 8 || idx === 20 || idx === 40 || idx === 59
-                    )
-                    .map((d, i) => (
-                      <tr
-                        key={i}
-                        className="hover:bg-stone-50 transition-colors"
-                      >
-                        <td className="p-3 font-semibold text-slate-900 font-sans">
-                          {i === 0 ? "Post-Recast Settle" : `Year ${d.year}`}
-                        </td>
-                        <td className="p-3 text-emerald-800 font-bold">
-                          ${d.offsetFH.toLocaleString()}
-                        </td>
-                        <td
-                          className={`p-3 font-semibold ${
-                            d.netDebt <= 0 ? "text-emerald-700" : "text-rose-800"
-                          }`}
-                        >
-                          ${d.netDebt.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+          {/* SENSITIVITY AND TRAJECTORY SECTIONS - FULL WIDTH STACK */}
+          <div className="space-y-6 pt-4">
+            {/* PART 1: STRATEGY SENSITIVITY STRESS-TESTING MATRIX */}
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm p-6 space-y-4 w-full">
+              <div className="space-y-1.5 pb-3 border-b border-stone-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                <div>
+                  <h4 className="text-sm font-bold font-serif text-blue-955 uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-red-600 inline-block animate-pulse"></span>
+                    Programmatic Sensitivity Stress-Testing Matrix
+                  </h4>
+                  <p className="text-[10px] text-stone-400 font-serif leading-relaxed mt-0.5">
+                    Evaluate years to <strong>Forever Home Offset</strong> and <strong>Portfolio Freedom (Combined Offset)</strong> alongside contractual repayments under variable economic friction.
+                  </p>
+                </div>
+                <span className="text-[9.5px] font-mono bg-red-50 text-red-800 border border-red-105 border-red-100 px-2 py-0.5 rounded font-semibold uppercase">
+                  Extended 30-Year Stress Range
+                </span>
+              </div>
+
+              {/* Stress testing Grid/Table */}
+              <div className="overflow-x-auto border border-stone-150 rounded-lg">
+                <table className="w-full text-left text-xs text-stone-600">
+                  <thead className="bg-[#590d0d] text-white text-[9.5px] uppercase font-bold tracking-wider font-serif border-b border-stone-205">
+                    <tr>
+                      <th className="p-3 w-[260px]">Interest Rate Scenario</th>
+                      <th className="p-3 text-center">Savings Reduced (-25%)</th>
+                      <th className="p-3 text-center bg-stone-900 text-yellow-350 text-yellow-350 text-yellow-300">Stated Investment Strategy (Current)</th>
+                      <th className="p-3 text-center">Savings Increased (+25%)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-150 font-serif text-[11px]">
+                    {finances.sensitivityMatrix.map((rowObj: any, rIdx: number) => {
+                      const { rateDelta, testRate, testInitialPayment, testRecastPayment, cells } = rowObj;
+                      return (
+                        <tr key={rIdx} className="hover:bg-red-50/10 transition-colors">
+                          <td className="p-3 font-bold font-sans bg-stone-50 text-stone-850 w-[260px] border-r border-stone-200/60">
+                            <div>
+                              <span className="text-xs font-extrabold text-blue-955 block font-mono">
+                                {testRate.toFixed(2)}% p.a.
+                              </span>
+                              <span className="text-[9.5px] text-stone-500 block font-normal font-serif">
+                                {rateDelta === 0 ? "Base Interest Rate" : `+${rateDelta.toFixed(1)}% Rate Shift`}
+                              </span>
+                              <div className="mt-2.5 pt-2 border-t border-stone-200/80 space-y-1.5 text-left text-[10px]">
+                                <span className="font-serif block text-[8.5px] text-stone-400 font-bold uppercase tracking-wider">
+                                  Forever Home Repayments
+                                </span>
+                                <div className="text-stone-500 font-sans space-y-0.5 leading-normal">
+                                  <div className="flex justify-between">
+                                    <span>Pre-Recast:</span>
+                                    <strong className="font-mono font-bold text-stone-800">${Math.round(testInitialPayment).toLocaleString()}/wk</strong>
+                                  </div>
+                                  <div className="flex justify-between text-purple-950 font-semibold bg-purple-50/50 px-1 py-0.5 rounded">
+                                    <span>Post-Recast:</span>
+                                    <strong className="font-mono font-extrabold text-purple-800">${Math.round(testRecastPayment).toLocaleString()}/wk</strong>
+                                  </div>
+                                </div>
+                                <div className="text-[9px] text-stone-400 font-serif leading-tight pt-1 border-t border-dotted border-stone-200 flex justify-between">
+                                  <span>Total Post-Recast Port*:</span>
+                                  <strong className="font-mono font-bold text-teal-800">${Math.round(testRecastPayment + 783.74).toLocaleString()}/wk</strong>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          {cells.map((cell: any, cIdx: number) => {
+                            const isStated = cell.rateDelta === 0 && cell.savingsMultiplier === 1.0;
+                            return (
+                              <td
+                                key={cIdx}
+                                className={`p-3 font-sans text-center transition-all ${
+                                  isStated ? "bg-amber-50/40 border-x border-amber-200/80 shadow-inner" : ""
+                                }`}
+                              >
+                                <div className="space-y-2 py-1.5">
+                                  <div className="bg-emerald-50/60 p-1.5 rounded border border-emerald-100">
+                                    <span className="text-[8.5px] text-stone-400 block uppercase font-serif font-bold tracking-wider">FH Offset Time:</span>
+                                    <strong className="font-mono text-emerald-800 font-extrabold text-xs">
+                                      {cell.fhYears} Years
+                                    </strong>
+                                  </div>
+                                  <div className="bg-teal-50/50 p-1.5 rounded border border-teal-100">
+                                    <span className="text-[8.5px] text-stone-400 block uppercase font-serif font-bold tracking-wider">Global Portfolio Freedom:</span>
+                                    <strong className="font-mono text-teal-800 font-extrabold text-xs">
+                                      {cell.bothYears} Years
+                                    </strong>
+                                  </div>
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-3 bg-rose-50/40 rounded-lg border border-rose-100/80 text-[10px] text-stone-500 font-serif leading-snug">
+                <strong>Stress-Testing Metric Guide:</strong> Rate additions apply multiplier scale contraction directly onto loan balances. *Total Post-Recast includes Forever Home Contract repayments & Fern St repayments of $783.74/wk.
+              </div>
             </div>
 
-            {/* STRATEGIC ANALYSIS */}
-            <div className="lg:col-span-8 bg-blue-50/50 border border-blue-100 rounded-xl p-5 text-xs text-blue-900 leading-relaxed font-serif space-y-3">
-              <span className="font-bold text-blue-955 text-blue-950 text-sm block uppercase tracking-wider">
-                Key Portfolio Trajectory Analysis:
-              </span>
-              <p>
-                By transitioning under a concurrent loan structure, you bypass
-                complex bridging products and isolate risk cleanly. Your primary
-                home loan commences at{" "}
-                <span className="font-semibold">
-                  ${Math.round(finances.loanRequired).toLocaleString()}
-                </span>{" "}
-                before being contractually paid down and recast to{" "}
-                <span className="font-semibold">
-                  ${Math.round(finances.recastForeverHomeLoanPrincipal).toLocaleString()}
-                </span>{" "}
-                upon receiving the joint{" "}
-                <span className="font-semibold">
-                  ${Math.round(finances.totalPostSaleCashPool).toLocaleString()}
-                </span>{" "}
-                post-sale injection.
-              </p>
-              <p>
-                With your chosen internal variation allocation, your Forever Home
-                becomes **100% Interest-Free and Fully Offset by Year{" "}
-                {finances.fhOffsetYears}**. Once neutralized, your cumulative State
-                cash velocity instantly redirects into the **Fern Street Holiday
-                House Offset**, wiping out your remaining debt exposure globally
-                to achieve **complete portfolio freedom in Year{" "}
-                {finances.bothOffsetYears}**.
-              </p>
+            {/* PART 2: INTERACTIVE TRAJECTORY LEDGER */}
+            <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between space-y-4 p-6 w-full">
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-2 border-b border-stone-100">
+                  <div>
+                    <h4 className="text-sm font-bold font-serif text-blue-955 uppercase tracking-wide">
+                      Simulation Ledgers (Dynamic Trajectory)
+                    </h4>
+                    <p className="text-[10px] text-stone-400 font-serif">
+                      Track individual loan drops and consolidated offset growths over a 30-year lifecycle.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 no-print self-stretch sm:self-auto">
+                    <button
+                      onClick={handleExportCsv}
+                      className="px-2 py-1 bg-stone-900 border border-stone-850 hover:bg-black text-white text-[10px] font-sans font-bold rounded shadow-sm hover:shadow transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Icons.Download className="w-3 h-3 text-stone-300" />
+                      Download CSV
+                    </button>
+                    <div className="flex rounded bg-stone-100 p-0.5 text-[10px] font-medium border border-stone-200">
+                      <button
+                        onClick={() => setTrajectoryTableMode("key")}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          trajectoryTableMode === "key"
+                            ? "bg-white text-stone-800 shadow-xs font-semibold"
+                            : "text-stone-500 hover:text-stone-800"
+                        }`}
+                      >
+                        Milestones
+                      </button>
+                      <button
+                        onClick={() => setTrajectoryTableMode("all")}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          trajectoryTableMode === "all"
+                            ? "bg-white text-stone-800 shadow-xs font-semibold"
+                            : "text-stone-500 hover:text-stone-800"
+                        }`}
+                      >
+                        All (30 Yr)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SEARCH FILTER */}
+                {trajectoryTableMode === "all" && (
+                  <div className="no-print relative">
+                    <input
+                      type="text"
+                      value={trajectorySearch}
+                      onChange={(e) => setTrajectorySearch(e.target.value)}
+                      placeholder="Search simulation by Year (e.g., Year 1, Year 15, Year 30)..."
+                      className="w-full border border-stone-200 rounded-lg px-2.5 py-1.5 text-[11px] font-sans focus:outline-none focus:ring-1 focus:ring-blue-900 bg-stone-50/50"
+                    />
+                    {trajectorySearch && (
+                      <button
+                        onClick={() => setTrajectorySearch("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 font-sans text-xs"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* THE TABLE */}
+              <div className="overflow-x-auto border border-stone-100 rounded-lg max-h-[380px] overflow-y-auto">
+                <table className="w-full text-left text-xs text-stone-600">
+                  <thead className="bg-stone-50 text-[10px] uppercase text-stone-500 font-bold tracking-wider font-serif border-b border-stone-200 sticky top-0 bg-stone-50">
+                    <tr>
+                      <th className="p-3">Timeline Year</th>
+                      <th className="p-3">FH Offset Balance</th>
+                      <th className="p-3">Fern St Offset</th>
+                      <th className="p-3 text-right">Net Portfolio Debt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
+                    {(() => {
+                      let filtered = finances.simulationData;
+                      if (trajectoryTableMode === "key") {
+                        // Keep Year 0, Year 5, Year 10, Year 20, Year 30 milestones
+                        filtered = finances.simulationData.filter((d) => {
+                          const yrFloat = parseFloat(d.year);
+                          return d.week === 0 || yrFloat === 5.0 || yrFloat === 10.0 || yrFloat === 20.0 || yrFloat === 30.0;
+                        });
+                      } else {
+                        if (trajectorySearch.trim() !== "") {
+                          const s = trajectorySearch.trim().toLowerCase();
+                          filtered = finances.simulationData.filter((d) => {
+                            const yrFloat = parseFloat(d.year);
+                            const yearLabel = `year ${d.year}`.toLowerCase();
+                            const isYearly = yrFloat % 1 === 0 || d.week === 0;
+                            return isYearly && (yearLabel.includes(s) || d.year.includes(s));
+                          });
+                        } else {
+                          filtered = finances.simulationData.filter((d) => {
+                            const yrFloat = parseFloat(d.year);
+                            return yrFloat % 1 === 0 || d.week === 0;
+                          });
+                        }
+                      }
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-stone-400 italic font-serif">
+                              No matching yearly intervals found.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map((d, i) => (
+                        <tr key={i} className="hover:bg-stone-50 transition-colors">
+                          <td className="p-3 font-semibold text-slate-900 font-sans">
+                            {d.week === 0 ? "Post-Recast (Day 1)" : `Year ${Math.round(parseFloat(d.year))}`}
+                          </td>
+                          <td className="p-3 text-emerald-800 font-bold">
+                            ${d.offsetFH.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-amber-800 font-bold">
+                            ${d.offsetFern.toLocaleString()}
+                          </td>
+                          <td
+                            className={`p-3 font-semibold text-right ${
+                              d.netDebt <= 0 ? "text-emerald-700" : "text-rose-800"
+                            }`}
+                          >
+                            ${d.netDebt.toLocaleString()}
+                          </td>
+                        </tr>
+                      ));
+                    })()}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          </div>
+
+          {/* TRAJECTORY ANALYSIS */}
+          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-5 text-xs text-blue-900 leading-relaxed font-serif space-y-3 mt-6">
+            <span className="font-bold text-blue-955 text-blue-950 text-sm block uppercase tracking-wider">
+              Key Portfolio Trajectory Analysis:
+            </span>
+            <p>
+              By transitioning under a concurrent loan structure, you bypass
+              complex bridging products and isolate risk cleanly. Your primary
+              home loan commences at{" "}
+              <span className="font-semibold">
+                ${Math.round(finances.loanRequired).toLocaleString()}
+              </span>{" "}
+              before being contractually paid down and recast to{" "}
+              <span className="font-semibold">
+                ${Math.round(finances.recastForeverHomeLoanPrincipal).toLocaleString()}
+              </span>{" "}
+              upon receiving the joint{" "}
+              <span className="font-semibold">
+                ${Math.round(finances.totalPostSaleCashPool).toLocaleString()}
+              </span>{" "}
+              post-sale injection.
+            </p>
+            <p>
+              With your chosen internal variation allocation, your Forever Home
+              becomes **100% Interest-Free and Fully Offset by Year{" "}
+              {finances.fhOffsetYears}**. Once neutralized, your cumulative State
+              cash velocity instantly redirects into the **Fern Street Holiday
+              House Offset**, wiping out your remaining debt exposure globally
+              to achieve **complete portfolio freedom in Year{" "}
+              {finances.bothOffsetYears}**.
+            </p>
           </div>
         </section>
 
