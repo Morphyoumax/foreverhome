@@ -1,6 +1,6 @@
 {
-  "name": "Warragul Multigenerational Estate Strategy Planner",
-  "description": "Models multigenerational estate timelines, Granny Flat rules, and mortgage recasting scenarios.",
+  "name": "Forever Home Financial Modeler",
+  "description": "Models multigenerational estate timelines, property purchases, and mortgage recasting scenarios.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

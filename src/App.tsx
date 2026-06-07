@@ -7,6 +7,42 @@ import {
 } from "./types";
 
 const Icons = {
+  Farm: ({ className = "w-5 h-5" }: { className?: string }) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+      className={className}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 10V21h10V10L8 6 3 10z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 21v-5h4v5M6 16l4 5M10 16l-4 5"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16 21V9.5a2.5 2.5 0 0 1 5 0V21"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16 9.5h5"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 21h18"
+      />
+    </svg>
+  ),
   Home: ({ className = "w-5 h-5" }: { className?: string }) => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -1470,7 +1506,7 @@ export default function App() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.setAttribute("download", `Warragul_Portfolio_Trajectory_${Date.now()}.csv`);
+    link.setAttribute("download", `Forever_Home_Portfolio_Trajectory_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1490,7 +1526,7 @@ export default function App() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Warragul Scenario Snapshot - Property Purchase Strategist</title>
+  <title>Forever Home Scenario Snapshot - Financial Modeler</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=JetBrains+Mono:wght@400;700&display=swap');
     
@@ -1647,8 +1683,8 @@ export default function App() {
 <body>
   <div class="container">
     <header>
-      <h1>Warragul Scenario Snapshot</h1>
-      <div class="subtitle">Multigenerational Transition & Cashflow Portfolio Modeler</div>
+      <h1>Forever Home Scenario Snapshot</h1>
+      <div class="subtitle">Forever Home Financial Modeler</div>
       <div class="meta-stamp">Scenario Export Date: ${reportDate} AEST</div>
     </header>
     
@@ -1788,14 +1824,14 @@ export default function App() {
       <h2 style="margin-top: 36px;">Notes / Scenario Analysis</h2>
       <p style="font-size: 0.85rem; color:#475569; font-style:italic; line-height:1.6;">
         This document represents an analytical modeled snapshot of alternative outcomes based on the 
-        Warragul Multigenerational Transition & Cashflow Portfolio Modeler tool. Any alteration to sale parameters, 
+        Forever Home Financial Modeler tool. Any alteration to sale parameters, 
         settlement dates, or internal recasting allocation offsets impacts overall simulation schedules and total combined 
         interest paid. Keep this report snapshot for your strategic records.
       </p>
     </div>
     
     <div class="footer">
-      Warragul Multigenerational Transition & Cashflow Portfolio Modeler • Buln Buln & District • Baseline May 2026
+      Forever Home Financial Modeler • Buln Buln & District • Baseline May 2026
     </div>
   </div>
 </body>
@@ -1805,7 +1841,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Warragul_Scenario_${inputs.internalVariationPct}pctRecast_${Date.now()}.html`;
+    link.download = `Forever_Home_Scenario_${inputs.internalVariationPct}pctRecast_${Date.now()}.html`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1819,16 +1855,15 @@ export default function App() {
         <div className="max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-blue-50 text-blue-900 rounded border border-blue-200">
-                <Icons.Home className="w-6 h-6 text-blue-900" />
+              <span className="p-1.5 bg-emerald-50 text-emerald-900 rounded border border-emerald-200 shadow-sm">
+                <Icons.Farm className="w-6 h-6 text-emerald-800" />
               </span>
-              <h1 className="text-2xl font-bold tracking-tight font-serif text-blue-900">
-                Concurrent Property Purchase Strategist
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight font-serif text-emerald-900">
+                Forever Home Financial Modeler
               </h1>
             </div>
             <p className="text-xs text-stone-500 mt-1 font-serif italic">
-              Warragul Multigenerational Transition & Cashflow Portfolio Modeler
-              • Buln Buln & District • Baseline May 2026
+              Multigenerational Transition & Cashflow Portfolio Modeler • Buln Buln & District • Baseline May 2026
             </p>
           </div>
 
@@ -5781,8 +5816,7 @@ export default function App() {
       <footer className="border-t border-stone-200 mt-12 py-6 bg-white shadow-inner">
         <div className="max-w-[95vw] xl:max-w-[90vw] 2xl:max-w-[1700px] mx-auto px-6 text-center text-xs text-stone-400 font-serif font-medium">
           <p>
-            © 2026 Warragul Multigenerational Estate Strategy Modeler. Prepared
-            for your property transition.
+            © 2026 Forever Home Financial Modeler. Prepared for your property transition.
           </p>
         </div>
       </footer>
