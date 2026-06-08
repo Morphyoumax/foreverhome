@@ -32,6 +32,9 @@ export interface PropertyInputs {
   recastTriggerEvent: "paulan" | "gfi" | "day1";
   merylRentStartOffset: number;
   gfiStartOffset: number;
+  merylRenoCost: number;
+  paulanRenoCost: number;
+  fhRenoMovingCost: number;
 }
 
 export interface PropertyScenario {

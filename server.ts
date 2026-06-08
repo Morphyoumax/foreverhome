@@ -9,23 +9,21 @@ dotenv.config();
 const PORT = 3000;
 
 const apiKey = process.env.GEMINI_API_KEY;
+const customApiKey = process.env.CUSTOM_GEMINI_API_KEY;
 
-let aiClient: GoogleGenAI | null = null;
-function getGenAI(): GoogleGenAI {
-  if (!aiClient) {
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is required to run property research queries.");
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
+function getGenAI(clientProvidedKey?: string): GoogleGenAI {
+  const keyToUse = (clientProvidedKey && clientProvidedKey.trim()) || customApiKey || apiKey;
+  if (!keyToUse) {
+    throw new Error("GEMINI_API_KEY or CUSTOM_GEMINI_API_KEY environment variable is required to run property research queries.");
   }
-  return aiClient;
+  return new GoogleGenAI({
+    apiKey: keyToUse,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
 }
 
 // Helper to generate a realistic, structured fallback report in case of Gemini API 429 quota exhaustion or missing key
@@ -125,15 +123,17 @@ async function startServer() {
 
   // Property Research Generator Route that utilizes the Gemini API with Search Grounding
   app.post("/api/generate-property-report", async (req, res) => {
-    const { urlOrAddress } = req.body;
+    const { urlOrAddress, customKey: bodyCustomKey } = req.body;
     if (!urlOrAddress || typeof urlOrAddress !== "string") {
       return res.status(400).json({ error: "Please provide a valid property address or realestate.com.au link." });
     }
 
-    console.log(`Generating report for: ${urlOrAddress}`);
+    const clientProvidedKey = (req.headers["x-custom-gemini-key"] as string) || (bodyCustomKey as string);
+
+    console.log(`Generating report for: ${urlOrAddress} (Custom key provided: ${!!clientProvidedKey})`);
 
     try {
-      const ai = getGenAI();
+      const ai = getGenAI(clientProvidedKey);
 
       const prompt = `Perform comprehensive property research for the provided address or realestate.com.au link. 
 Use Google Search grounding to retrieve current price guides, estimated purchase prices, land sizes, property descriptions, 

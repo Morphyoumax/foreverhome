@@ -247,13 +247,13 @@ const ACCOUNT_BALANCES = {
 
 const DEFAULT_INPUTS: PropertyInputs = {
   purchasePrice: 1700000,          // Default Forever Home purchase price
-  paulanSalePrice: 730000,         // Locked Paulan Court purchase/sale price
+  paulanSalePrice: 740000,         // Locked Paulan Court purchase/sale price
   merylSalePrice: 730000,          // Twin Ranges gross sale price
-  merylContribution: 600000,       // Meryl's Granny Flat cash injection (post-settlement)
+  merylContribution: 700000,       // Meryl's Granny Flat cash injection (post-settlement)
   paulanOffsetPulled: 381456,      // Programmatic (read-only indicator fallback)
   fernOffsetPulled: 238374,        // Programmatic (read-only indicator fallback)
   offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
-  weeklySavings: 1000,             // Extra savings allocated to offset weekly
+  weeklySavings: 0,                // Extra savings allocated to offset weekly
   interestRate: 6.15,              // Variable loan rate
   
   // Parallel timeline delays
@@ -262,12 +262,12 @@ const DEFAULT_INPUTS: PropertyInputs = {
   merylCampaignDays: 45,           // Listed for sale campaign (average time on market)
   merylSettleDays: 60,             // Twin Ranges settlement period
   
-  fhStartDelay: 123,               // Independent contract sign / prep delay (Mid-September onset)
+  fhStartDelay: 151,               // Independent contract sign / prep delay to set Oct 13th start
   fhSettleDays: 60,                // Settlement on Forever Home
-  renoDays: 21,                    // Renovation period
+  renoDays: 30,                    // Renovation period
   moveDays: 7,                     // Move-in duration
   
-  paulanStartDelay: 211,           // Shifted to start immediately after the move event in Swimlane B concludes
+  paulanStartDelay: 248,           // Shifted to start immediately after the move event in Swimlane B concludes
   paulanPrepDays: 7,               // Paulan prep duration
   paulanCampaignDays: 28,          // Paulan marketing
   paulanSettleDays: 60,            // Settlement period on selling Paulan Court
@@ -281,6 +281,9 @@ const DEFAULT_INPUTS: PropertyInputs = {
   recastTriggerEvent: "gfi",       // Default recast trigger event
   merylRentStartOffset: 0,
   gfiStartOffset: 1,               // GFI default scheduled offset is 1 day after Twin Ranges settlement finalizes
+  merylRenoCost: 0,
+  paulanRenoCost: 10000,
+  fhRenoMovingCost: 10000,
 };
 
 // Helper to consolidate, clamp and adjust financial parameters dynamically in response to slider changes
@@ -292,13 +295,13 @@ const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
 
   // Dynamic merylNetProceeds clamping
   const merylSale = newInputs.merylSalePrice ?? 730000;
-  const merylNet = Math.max(0, merylSale - (merylSale * 0.025));
-  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 600000));
+  const merylNet = Math.max(0, merylSale - (merylSale * 0.025) - (newInputs.merylRenoCost ?? 0));
+  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 700000));
 
   // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
   const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 90) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
   const gfiStart = merylSettleEnd + (newInputs.gfiStartOffset ?? 1);
-  const fhSettleEnd = (newInputs.fhStartDelay ?? 123) + (newInputs.fhSettleDays ?? 60);
+  const fhSettleEnd = (newInputs.fhStartDelay ?? 110) + (newInputs.fhSettleDays ?? 60);
   const gfiBeforeFHSettle = gfiStart <= fhSettleEnd;
 
   const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? merylContribution : 0);
@@ -318,6 +321,9 @@ const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     recastTriggerEvent: newInputs.recastTriggerEvent ?? "gfi",
     merylRentStartOffset: newInputs.merylRentStartOffset ?? 0,
     gfiStartOffset: newInputs.gfiStartOffset ?? 1,
+    merylRenoCost: newInputs.merylRenoCost ?? 0,
+    paulanRenoCost: newInputs.paulanRenoCost ?? 10000,
+    fhRenoMovingCost: newInputs.fhRenoMovingCost ?? 10000,
   };
 };
 
@@ -424,12 +430,24 @@ export default function App() {
   const [newTimelineScenarioName, setNewTimelineScenarioName] = useState("");
   const [activeInteraction, setActiveInteraction] = useState<ActiveInteraction | null>(null);
   const [isPaulanLinkedHovered, setIsPaulanLinkedHovered] = useState(false);
-  const [activeTab, setActiveTab] = useState<"timeline" | "mortgage" | "settles" | "propertyResearch">("timeline");
+  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "mortgage" | "settles" | "propertyResearch">("overview");
   const [trajectoryTableMode, setTrajectoryTableMode] = useState<"key" | "all">("key");
   const [trajectorySearch, setTrajectorySearch] = useState("");
   const [researchUrlOrAddress, setResearchUrlOrAddress] = useState("");
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [customGeminiApiKey, setCustomGeminiApiKey] = useState(() => localStorage.getItem("custom_gemini_api_key") || "");
+  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
+  const [overviewNotes, setOverviewNotes] = useState(() => localStorage.getItem("overview_notes") || "");
+
+  useEffect(() => {
+    localStorage.setItem("custom_gemini_api_key", customGeminiApiKey);
+  }, [customGeminiApiKey]);
+
+  useEffect(() => {
+    localStorage.setItem("overview_notes", overviewNotes);
+  }, [overviewNotes]);
+
   const [researchReport, setResearchReport] = useState<{
     address: string;
     estimatedPrice: number;
@@ -458,9 +476,14 @@ export default function App() {
     setResearchSources([]);
     
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (customGeminiApiKey.trim()) {
+        headers["X-Custom-Gemini-Key"] = customGeminiApiKey.trim();
+      }
+
       const response = await fetch("/api/generate-property-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ urlOrAddress: researchUrlOrAddress.trim() }),
       });
       
@@ -737,17 +760,20 @@ export default function App() {
       totalTransitionInterestPaulan + totalTransitionInterestFern;
 
     // Paulan Court Net proceeds of sale calculation with dynamic sale price
-    const paulanSale = inputs.paulanSalePrice ?? 730000;
+    const paulanSale = inputs.paulanSalePrice ?? 740000;
     const sellingCosts = paulanSale * 0.025; // 2.5% fixed commissions & legals
     const paulanNetProceeds = Math.max(
       0,
-      paulanSale - ACCOUNT_BALANCES.paulansLoan - sellingCosts
+      paulanSale - ACCOUNT_BALANCES.paulansLoan - sellingCosts - (inputs.paulanRenoCost ?? 10000)
     );
 
     // Meryl's Twin Ranges sale details with dynamic sale price
     const merylGrossProceeds = inputs.merylSalePrice ?? 730000;
     const merylSellingFees = merylGrossProceeds * 0.025; // 2.5% standard commissions, marketing, conveyancing, legals
-    const merylNetProceeds = Math.max(0, merylGrossProceeds - merylSellingFees);
+    const merylNetProceeds = Math.max(
+      0,
+      merylGrossProceeds - merylSellingFees - (inputs.merylRenoCost ?? 0)
+    );
     const merylCashSurplus = Math.max(0, merylNetProceeds - inputs.merylContribution);
 
     // Post-Settlement Liquid Injection Pool: Include both remaining day 1 cash cushion and post-sale cash
@@ -760,7 +786,10 @@ export default function App() {
       loanRequired,
       totalCombinedPool * variationPct
     );
-    const keptInOffsetAccount = totalCombinedPool - appliedToPrincipalReduction;
+    const keptInOffsetAccount = Math.max(
+      0,
+      totalCombinedPool - appliedToPrincipalReduction - (inputs.fhRenoMovingCost ?? 10000)
+    );
 
     // Post-Variation Stabilized Mortgage State
     const recastForeverHomeLoanPrincipal = Math.max(
@@ -1029,6 +1058,7 @@ export default function App() {
       }
       if (fhOpened) {
         fhOffsetRaw += savingsAccumulated;
+        fhOffsetRaw -= (inputs.fhRenoMovingCost ?? 10000);
       }
 
       const fhOffsetCurrent = Math.min(currFHLoan, Math.max(0, fhOffsetRaw));
@@ -2210,6 +2240,19 @@ export default function App() {
             {/* TABS ROW */}
             <div className="flex flex-wrap border border-stone-200 gap-1.5 text-sm no-print bg-white p-1.5 rounded-xl shadow-sm">
               <button
+                onClick={() => setActiveTab("overview")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "overview"
+                    ? "bg-emerald-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                </svg>
+                Overview
+              </button>
+              <button
                 onClick={() => setActiveTab("timeline")}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
                   activeTab === "timeline"
@@ -2256,7 +2299,351 @@ export default function App() {
             </div>
 
             {/* TAB CONTENTS */}
-            <div className={`space-y-6 ${activeTab === "timeline" ? "block" : "hidden print:block"}`}>
+            {/* OVERVIEW TAB CONTENT (A4 ONE-PAGER SNAPSHOT) */}
+            <div className={`space-y-4 ${activeTab === "overview" ? "block print:block" : "hidden"}`}>
+              {/* Elegant A4 container */}
+              <div className="bg-white border border-stone-200 p-6 sm:p-8 rounded-xl shadow-sm print-card space-y-6">
+                
+                {/* Header Information Bar */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-stone-200 pb-4 gap-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider font-sans">
+                      Strategic Scenario Summary Sheet (A4 One-Pager)
+                    </span>
+                    <h2 className="text-xl sm:text-2xl font-bold font-serif text-slate-900 mt-0.5">
+                      Forever Home Portfolio Transition Overview
+                    </h2>
+                    <p className="text-xs text-stone-500 font-serif italic mt-0.5">
+                      Analytical snapshot for scenario comparisons and family strategy discussions.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 no-print self-stretch sm:self-auto">
+                    <button
+                      onClick={() => window.print()}
+                      className="bg-emerald-900 hover:bg-emerald-950 text-white font-serif font-semibold text-xs px-4 py-2 rounded-lg transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.615 0-1.113-.49-1.12-1.127L6.34 18m11.32 0-1.09-5.321m1.09 5.321H6.34m0 0 1.09-5.321m0 0A42.404 42.404 0 0 1 12 11.25c1.782 0 3.524.165 5.218.479L17.66 12.75M9 7.5c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125v2.217m-6 0h6" />
+                      </svg>
+                      Print Sheet (A4)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Key Summary Milestones KPI Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-stone-100 pb-5">
+                  <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl text-center shadow-inner">
+                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
+                      FH Offset Achievement
+                    </span>
+                    <span className="text-2xl font-bold font-serif text-emerald-800 block mt-1">
+                      {finances.fhOffsetYears} <span className="text-xs font-sans font-medium text-stone-500">Years</span>
+                    </span>
+                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
+                      Est. Interest Prior: ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl text-center shadow-inner">
+                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
+                      Portfolio Offset Freedom
+                    </span>
+                    <span className="text-2xl font-bold font-serif text-blue-900 block mt-1">
+                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500">Years</span>
+                    </span>
+                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
+                      Combined Est. Interest: ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-xl text-center shadow-inner">
+                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
+                      Stabilized Weekly Committed
+                    </span>
+                    <span className="text-2xl font-bold font-serif text-amber-800 block mt-1">
+                      ${Math.round(finances.totalCommittedWeeklyOutlays).toLocaleString()} <span className="text-xs font-sans font-medium text-stone-500">/wk</span>
+                    </span>
+                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
+                      Income Strain: {finances.mortgageToIncomeRatio.toFixed(1)}% of Net
+                    </span>
+                  </div>
+                </div>
+
+                {/* A4 Balance Sheet block */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-2">
+                  
+                  {/* Property Assets & Sales Matrix */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
+                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800">
+                        1. Assets & Inflow Realization
+                      </span>
+                    </div>
+                    <table className="w-full text-xs text-left text-stone-600 font-sans">
+                      <thead>
+                        <tr className="border-b border-stone-100 text-stone-400">
+                          <th className="py-2 font-medium">Property Interest</th>
+                          <th className="py-2 text-right font-medium">Scenario Target</th>
+                          <th className="py-2 text-right font-medium">Net Est. Inflow</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Paulan Court Gross Sale</td>
+                          <td className="py-2.5 text-right font-mono">${inputs.paulanSalePrice.toLocaleString()}</td>
+                          <td className="py-2.5 text-right font-mono font-semibold text-stone-800" title="Minus commission, remaining loan $230000 and reno expenses">
+                            ${Math.round(finances.paulanNetProceeds).toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Meryl's Twin Ranges Gross</td>
+                          <td className="py-2.5 text-right font-mono">${inputs.merylSalePrice.toLocaleString()}</td>
+                          <td className="py-2.5 text-right font-mono font-semibold text-stone-800" title="Minus commission and reno expenses">
+                            ${Math.round(finances.merylNetProceeds).toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50 bg-emerald-50/20">
+                          <td className="py-2.5 font-medium text-emerald-950">Meryl's Cash Contribution</td>
+                          <td className="py-2.5 text-right font-mono">-</td>
+                          <td className="py-2.5 text-right font-mono font-bold text-emerald-800">
+                            ${inputs.merylContribution.toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Existing Liquid Cash Offset</td>
+                          <td className="py-2.5 text-right font-mono">-</td>
+                          <td className="py-2.5 text-right font-mono font-semibold text-stone-800">
+                            $619,830
+                          </td>
+                        </tr>
+                        <tr className="border-t-2 border-stone-200 bg-stone-50/50 font-bold">
+                          <td className="py-3 text-stone-900 font-serif">Total Post-Sale Cash Pool</td>
+                          <td className="py-3 text-right font-mono">-</td>
+                          <td className="py-3 text-right font-mono text-blue-900">
+                            ${Math.round(finances.totalPostSaleCashPool + 619830).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Property Acquisitions & Funding Outlays */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
+                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800">
+                        2. Acquisitions & Outlays (Initial)
+                      </span>
+                    </div>
+                    <table className="w-full text-xs text-left text-stone-600 font-sans">
+                      <thead>
+                        <tr className="border-b border-stone-100 text-stone-400">
+                          <th className="py-2 font-medium">Acquisition Element</th>
+                          <th className="py-2 text-right font-medium">Value / Expense</th>
+                          <th className="py-2 text-right font-medium">Friction Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Forever Home Purchase Price</td>
+                          <td className="py-2.5 text-right font-mono">${inputs.purchasePrice.toLocaleString()}</td>
+                          <td className="py-2.5 text-right font-mono text-stone-500">-</td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Stamp Duty Friction (Victoria)</td>
+                          <td className="py-2.5 text-right font-mono">-</td>
+                          <td className="py-2.5 text-right font-mono font-semibold text-rose-800">
+                            ${Math.round(finances.stampDuty).toLocaleString()}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Rego / Conveyancy Process</td>
+                          <td className="py-2.5 text-right font-mono">-</td>
+                          <td className="py-2.5 text-right font-mono text-rose-800 font-semibold">
+                            $5,000
+                          </td>
+                        </tr>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50 bg-stone-50/40">
+                          <td className="py-2.5 font-medium text-stone-850">Initial Peak Forever Home Loan</td>
+                          <td className="py-2.5 text-right font-mono font-bold text-blue-900">${Math.round(finances.loanRequired).toLocaleString()}</td>
+                          <td className="py-2.5 text-right font-mono text-stone-500" title="Concurrent peak loan value">-</td>
+                        </tr>
+                        <tr className="border-t-2 border-stone-200 bg-stone-50/50 font-bold">
+                          <td className="py-3 text-stone-900 font-serif">Total Physical Land outlays</td>
+                          <td className="py-3 text-right font-mono">-</td>
+                          <td className="py-3 text-right font-mono text-blue-900">
+                            ${Math.round(finances.totalAcquisitionCost).toLocaleString()}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                </div>
+
+                {/* Restructuring recast breakdown box */}
+                <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-2">
+                    <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                      <span>🔄</span>
+                      <span>3. Cash Recasting Partition & weekly Cash Flow Comparison</span>
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-950 font-sans font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full">
+                      Applied Recast Split: {inputs.internalVariationPct}%
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-stone-600">
+                    <div className="space-y-2 font-sans">
+                      <p className="font-serif leading-relaxed text-[11px]">
+                        Upon the completion of settlements, a total of <strong className="text-slate-900">${Math.round(finances.totalPostSaleCashPool + finances.remainingDay1CashCushion).toLocaleString()}</strong> is compiled in cash.
+                        Your specified split directs:
+                      </p>
+                      <ul className="space-y-1.5 list-disc pl-4 text-[11px]">
+                        <li>
+                          <strong className="text-blue-900 font-semibold">{inputs.internalVariationPct}% reduction</strong>: <strong>${Math.round(finances.appliedToPrincipalReduction).toLocaleString()}</strong> is committed directly to reducing the loan principal.
+                        </li>
+                        <li>
+                          <strong className="text-emerald-800 font-semibold font-mono">Offset preservation</strong>: <strong>${Math.round(finances.keptInOffsetAccount).toLocaleString()}</strong> remains liquid in your offset account (after deducting ${Math.round(inputs.fhRenoMovingCost ?? 10000).toLocaleString()} for moving and renovation allowances).
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="border border-stone-200/80 bg-white p-3 rounded-lg grid grid-cols-2 gap-4 divide-x divide-stone-100 shadow-sm font-sans">
+                      <div className="space-y-1 text-center">
+                        <span className="text-[10px] text-stone-400 uppercase font-semibold">Immediate Initial Repayment</span>
+                        <div className="text-lg font-bold font-mono text-stone-500 line-through">
+                          ${Math.round(finances.initialWeeklyPayment).toLocaleString()}
+                        </div>
+                        <span className="text-[9px] text-stone-400 block font-serif">/week during Peak Lag</span>
+                      </div>
+                      <div className="space-y-1 text-center pl-4">
+                        <span className="text-[10px] text-emerald-800 uppercase font-bold">Post-Recast Repayment</span>
+                        <div className="text-lg font-bold font-mono text-emerald-900">
+                          ${Math.round(finances.recastWeeklyPayment).toLocaleString()}
+                        </div>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-950 font-bold px-1.5 py-0.2 rounded-full inline-block mt-0.5">
+                          Saved: ${Math.max(0, Math.round(finances.initialWeeklyPayment - finances.recastWeeklyPayment))} /wk
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Timeline and Transitions checklist */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  <div className="space-y-2 font-sans">
+                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
+                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 font-serif">
+                        🗓️ 4. Logistical Schedule Milestones
+                      </span>
+                    </div>
+                    <ul className="space-y-2 text-xs">
+                      <li className="flex justify-between border-b border-stone-100 pb-1">
+                        <span className="text-stone-600 font-medium font-serif">Day 0 Settlement:</span>
+                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.fhSettle}</span>
+                      </li>
+                      <li className="flex justify-between border-b border-stone-100 pb-1">
+                        <span className="text-stone-600 font-medium font-serif">Paulan Court Preparation:</span>
+                        <span className="font-mono text-slate-800">Commences {timeline.dates.paulanPrepStart}</span>
+                      </li>
+                      <li className="flex justify-between border-b border-stone-100 pb-1">
+                        <span className="text-stone-600 font-medium font-serif">Paulan Court Settlement:</span>
+                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.paulanSettle}</span>
+                      </li>
+                      <li className="flex justify-between border-b border-stone-100 pb-1">
+                        <span className="text-stone-600 font-medium font-serif">Meryl Ranges Settlement:</span>
+                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.merylSettle}</span>
+                      </li>
+                      <li className="flex justify-between border-b border-stone-100 pb-1">
+                        <span className="text-stone-600 font-medium font-serif">Forever Home Move End:</span>
+                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.moveEnd}</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* Transition constraints & alert messages */}
+                  <div className="space-y-2 font-sans">
+                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
+                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 font-serif">
+                        ⚖️ 5. Strategy & Transition Balance Check
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {/* Check 1: Lag Alert */}
+                      {timeline.fhSettleEnd < timeline.merylSettleEnd ? (
+                        <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-amber-950 font-serif leading-relaxed">
+                          <span>🔔</span>
+                          <div>
+                            <strong>Interest servicing lag active</strong>: settling on the Forever Home {Math.round(timeline.merylSettleEnd - timeline.fhSettleEnd)} days before Meryl's Twin Ranges cash proceeds are captured. Servicing is at peak debt level.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-emerald-950 font-serif leading-relaxed">
+                          <span>✅</span>
+                          <div>
+                            <strong>Cash alignment secure</strong>: Meryl's Twin Ranges proceeds arrive or GFI is established on or before Forever Home settlement Day, reducing immediate debt exposure.
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Check 2: Buffer cushion integrity */}
+                      {finances.isBufferCompromised ? (
+                        <div className="bg-rose-50 border border-rose-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-rose-950 font-serif leading-relaxed">
+                          <span>⚠️</span>
+                          <div>
+                            <strong>Cash buffer breached</strong>: Day 1 cash cushion of <strong>${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</strong> is below your preferred savings buffer parameter of <strong>${inputs.offsetBuffer.toLocaleString()}</strong>. Consider lowering the Forever Home purchase target.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-emerald-950 font-serif leading-relaxed">
+                          <span>✅</span>
+                          <div>
+                            <strong>Cash buffer satisfied</strong>: Remaining Day 1 liquid buffer of <strong>${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</strong> matches your preferred parameters.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct interactive textbox for couple comparisons */}
+                <div className="border border-stone-200 bg-stone-50/50 p-4 rounded-xl space-y-2 no-print font-sans">
+                  <div className="flex justify-between items-center bg-transparent">
+                    <label className="text-[11px] font-bold text-stone-750 uppercase tracking-widest font-serif block">
+                      💬 Scenario Notes & Couples Discussion Box (Saved to browser)
+                    </label>
+                    {overviewNotes.trim() && (
+                      <button 
+                        onClick={() => setOverviewNotes("")}
+                        className="text-[9px] font-bold text-red-700 hover:underline cursor-pointer"
+                      >
+                        Clear Notes
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    rows={3}
+                    placeholder="E.g., Scenario A targets Meryls fast settlement. Tell me Josh, if Paulan sells for $750k instead of $740k we can keep more offsets."
+                    className="w-full text-xs font-serif leading-relaxed bg-white border border-stone-300 rounded-lg p-3 focus:ring-1 focus:ring-emerald-900 focus:outline-none"
+                    value={overviewNotes}
+                    onChange={(e) => setOverviewNotes(e.target.value)}
+                  />
+                  <div className="flex justify-between items-center text-[10px] text-stone-400">
+                    <span>Write in your discussion notes or scenario thoughts—they persist in your local state.</span>
+                    <span className="font-mono text-emerald-800 font-semibold">{overviewNotes.trim() ? "• State Saved" : ""}</span>
+                  </div>
+                </div>
+
+                {/* Print only watermark */}
+                <div className="hidden print:block text-center border-t border-stone-200 pt-4 text-[9px] text-stone-400 font-serif">
+                  Document prepared dynamically via Forever Home Financial transition Modeler. Discussed by Josh and wife. Current Snapshot Scenario Recast: {inputs.internalVariationPct}%.
+                </div>
+
+              </div>
+            </div>
+
+            {/* TAB CONTENTS */}
+            <div className={`space-y-6 ${activeTab === "timeline" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
               {/* SECTION 1: GANTT CHART SWIMLANES */}
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -3622,7 +4009,7 @@ export default function App() {
         </section>
             </div>
 
-            <div className={`space-y-6 ${activeTab === "mortgage" ? "block" : "hidden print:block"}`}>
+            <div className={`space-y-6 ${activeTab === "mortgage" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
 
         {/* SECTION 2: INPUT CENTER & AFFORDABILITY ENGINE */}
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
@@ -4184,7 +4571,7 @@ export default function App() {
               <div className="flex items-center gap-1.5 text-emerald-950">
                 <span className="w-3 h-3 rounded-full bg-emerald-600 block"></span>
                 <h3 className="font-bold text-lg font-serif">
-                  Meryl's Granny Flat Right-to-Reside Cash Injection
+                  Meryl: Sell Twin Ranges and GFI Payment
                 </h3>
               </div>
               <p className="text-xs text-emerald-850 font-serif leading-relaxed">
@@ -4249,6 +4636,34 @@ export default function App() {
                 </div>
               </div>
 
+              {/* SLIDER 3: TWIN RANGES RENO COST */}
+              <div className="space-y-1.5 pt-3 border-t border-emerald-100/60">
+                <div className="flex justify-between text-xs font-bold text-emerald-900">
+                  <span>Twin Ranges Reno Cost</span>
+                  <span className="font-mono text-emerald-700 text-sm">
+                    ${inputs.merylRenoCost.toLocaleString()}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={50000}
+                  step={1000}
+                  value={inputs.merylRenoCost}
+                  onChange={(e) =>
+                    handleInputChange(
+                      "merylRenoCost",
+                      parseInt(e.target.value)
+                    )
+                  }
+                  className="w-full accent-emerald-600 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
+                  <span>Min: $0</span>
+                  <span>Max: $50k</span>
+                </div>
+              </div>
+
               {/* MERYL'S SELLING FEES DEDUCTION & SURPLUS AREA */}
               <div className="space-y-1.5 pt-3 border-t border-emerald-100/60">
                 <div className="flex justify-between text-[11px] text-stone-500 font-serif">
@@ -4259,9 +4674,15 @@ export default function App() {
                   <span>Agent Sell Fees & Legals (2.5%):</span>
                   <span className="font-mono text-rose-700">-${finances.merylSellingFees.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-[11px] text-emerald-950 font-bold font-serif">
+                {inputs.merylRenoCost > 0 && (
+                  <div className="flex justify-between text-[11px] text-stone-500 font-serif">
+                    <span>Twin Ranges Reno Cost:</span>
+                    <span className="font-mono text-rose-700">-${inputs.merylRenoCost.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-[11px] text-emerald-950 font-bold font-serif border-t border-emerald-100/60 pt-1">
                   <span>Net Sales Cash Released:</span>
-                  <span className="font-mono text-emerald-805 text-emerald-800">${finances.merylNetProceeds.toLocaleString()}</span>
+                  <span className="font-mono text-emerald-800">${finances.merylNetProceeds.toLocaleString()}</span>
                 </div>
                 <div className="bg-emerald-50/75 p-2.5 rounded border border-emerald-100 text-xs mt-2 flex justify-between items-center">
                   <div>
@@ -4305,7 +4726,7 @@ export default function App() {
 
             <div className="bg-white p-4 rounded-xl border border-rose-200 mt-3 space-y-3.5">
               {/* PAULAN COURT SALE PRICE SLIDER */}
-              <div className="space-y-1.5 pb-2 border-b border-rose-100/60">
+              <div className="space-y-1.5 pb-2">
                 <div className="flex justify-between text-xs font-bold text-rose-950">
                   <span>Paulan Court Sale Price</span>
                   <span className="font-mono text-rose-700 text-sm font-bold">
@@ -4332,8 +4753,36 @@ export default function App() {
                 </div>
               </div>
 
+              {/* SLIDER 2: PAULAN RENOVATION COST */}
+              <div className="space-y-1.5 pt-3 border-t border-rose-100/60">
+                <div className="flex justify-between text-xs font-bold text-rose-950 font-serif">
+                  <span>Paulan Renovation Cost</span>
+                  <span className="font-mono text-rose-700 text-sm font-bold">
+                    ${inputs.paulanRenoCost.toLocaleString()}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={50000}
+                  step={1000}
+                  value={inputs.paulanRenoCost}
+                  onChange={(e) =>
+                    handleInputChange(
+                      "paulanRenoCost",
+                      parseInt(e.target.value)
+                    )
+                  }
+                  className="w-full accent-rose-600 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
+                  <span>Min: $0</span>
+                  <span>Max: $50k</span>
+                </div>
+              </div>
+
               {/* REAL ESTATE DEAL BREAKDOWN */}
-              <div className="text-xs space-y-1 font-serif text-rose-950">
+              <div className="text-xs space-y-1 font-serif text-rose-950 border-t border-rose-100/60 pt-2.5">
                 <div className="flex justify-between text-[11px] pb-1">
                   <span>Contract price:</span>
                   <span className="font-mono font-bold text-slate-800">${inputs.paulanSalePrice.toLocaleString()}</span>
@@ -4342,16 +4791,50 @@ export default function App() {
                   <span>Outstanding Mortgage Paid Out:</span>
                   <span className="font-mono text-rose-700">-$381,446</span>
                 </div>
-                <div className="flex justify-between text-[11px] border-b border-rose-100 pb-1.5 pt-1 border-t border-rose-100/50">
+                <div className="flex justify-between text-[11px] pt-1">
                   <span>Agent Commission & Conveyancing (2.5%):</span>
                   <span className="font-mono text-rose-700">-${Math.round(finances.sellingCosts).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-bold text-rose-950 pt-1.5 font-sans">
+                {inputs.paulanRenoCost > 0 && (
+                  <div className="flex justify-between text-[11px] pt-1">
+                    <span>Paulan Renovation Cost:</span>
+                    <span className="font-mono text-rose-700">-${inputs.paulanRenoCost.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-rose-950 pt-1.5 font-sans border-t border-rose-250 mt-1.5">
                   <span className="text-slate-900">Net Settle Cash Released:</span>
                   <span className="font-mono text-emerald-700 text-sm font-extrabold">
                     +${Math.round(finances.paulanNetProceeds).toLocaleString()}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* BLUE CONTAINER FOR FOREVER HOME RENO/MOVING COSTS */}
+            <div className="bg-blue-50/95 border border-blue-200/80 p-4 rounded-xl space-y-2 text-xs font-serif text-blue-950 mt-3.5 shadow-sm">
+              <div className="flex justify-between items-center font-bold">
+                <span className="text-blue-900 text-xs">Forever Home Renovation/Moving Costs</span>
+                <span className="font-mono text-blue-700 text-sm">
+                  ${inputs.fhRenoMovingCost.toLocaleString()}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100000}
+                step={1000}
+                value={inputs.fhRenoMovingCost}
+                onChange={(e) =>
+                  handleInputChange(
+                    "fhRenoMovingCost",
+                    parseInt(e.target.value)
+                  )
+                }
+                className="w-full accent-blue-600 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
+                <span>Min: $0</span>
+                <span>Max: $100k</span>
               </div>
             </div>
           </div>
@@ -4629,7 +5112,7 @@ export default function App() {
         </section>
             </div>
 
-            <div className={`space-y-6 ${activeTab === "settles" ? "block" : "hidden print:block"}`}>
+            <div className={`space-y-6 ${activeTab === "settles" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
 
         {/* SECTION 5: LIVE CASH FLOW FORECAST & KEY PERFORMANCE INDICATORS */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -5552,14 +6035,67 @@ export default function App() {
               {/* SECTION: PROPERTY RESEARCH GENERATOR */}
               <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
                 <div>
-                  <h3 className="text-lg font-bold text-blue-900 font-serif">
-                    Property Research Report Generator
-                  </h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <h3 className="text-lg font-bold text-blue-900 font-serif">
+                      Property Research Report Generator
+                    </h3>
+                    <button
+                      onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
+                      className="text-[11px] font-semibold text-stone-600 hover:text-blue-900 flex items-center justify-center gap-1.5 border border-stone-200 hover:border-blue-200 px-3 py-1.5 rounded-lg bg-stone-50/50 cursor-pointer shadow-sm transition-all whitespace-nowrap self-start sm:self-center text-xs font-sans"
+                    >
+                      <span>🔑</span>
+                      <span>Config API Key {customGeminiApiKey.trim() ? "• Custom Active" : ""}</span>
+                    </button>
+                  </div>
                   <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
                     Enter a property address or paste a link from <strong>realestate.com.au</strong> or <strong>domain.com.au</strong>. 
                     Gemini will scan price guides, land sizes, custom descriptions, travel commutes, and assess suitability for multigenerational structures.
                   </p>
                 </div>
+
+                {showApiKeyConfig && (
+                  <div className="bg-blue-50/40 border border-blue-100 p-4 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-blue-950 font-serif">
+                        Configure Personal Gemini API Key
+                      </span>
+                      <span className="text-[10px] text-blue-800 bg-blue-100/60 px-2 py-0.5 rounded-full font-serif font-semibold">
+                        {customGeminiApiKey.trim() ? "Using Personal Key" : "Using Shared Key"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-600 font-serif leading-relaxed">
+                      If the default shared Gemini quota is busy or exhausted (resulting in fallback reports), you can supply your own free Gemini API key below. Keys are stored safely and solely in your browser's private local state.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="password"
+                        placeholder="AIzaSy... (Paste your private API key here)"
+                        value={customGeminiApiKey}
+                        onChange={(e) => setCustomGeminiApiKey(e.target.value)}
+                        className="flex-1 border border-stone-300 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white shadow-inner"
+                      />
+                      {customGeminiApiKey.trim() && (
+                        <button
+                          onClick={() => setCustomGeminiApiKey("")}
+                          className="bg-stone-100 hover:bg-stone-200 border border-stone-305 text-stone-700 font-sans font-semibold text-xs px-3 py-1.5 rounded-lg cursor-pointer transition-all whitespace-nowrap"
+                        >
+                          Clear Custom Key
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-stone-400 font-serif">
+                      Don't have a custom key? Get a free API key instantly in 1 click at{" "}
+                      <a 
+                        href="https://aistudio.google.com/" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-blue-600 underline font-semibold hover:text-blue-800 text-[10px]"
+                      >
+                        aistudio.google.com
+                      </a>.
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row gap-3">
                   <input
@@ -5730,7 +6266,7 @@ export default function App() {
         </div> {/* Closing WORKSPACE MAIN GRID */}
 
         {/* SECTION 7: MULTIGENERATIONAL STUDY & INTEL NOTEBOOK */}
-        <section className="bg-stone-100/70 border border-stone-200 rounded-xl p-5 shadow-sm space-y-4 print-card">
+        <section className={`bg-stone-100/70 border border-stone-200 rounded-xl p-5 shadow-sm space-y-4 print-card ${activeTab === "overview" ? "print:hidden" : ""}`}>
           <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
             <Icons.Book className="w-4 h-4 text-blue-900" />
             <h4 className="text-xs font-bold text-blue-900 uppercase tracking-wider font-serif">
