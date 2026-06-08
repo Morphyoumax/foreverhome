@@ -2337,7 +2337,12 @@ export default function App() {
                       FH Offset Achievement
                     </span>
                     <span className="text-2xl font-bold font-serif text-emerald-800 block mt-1">
-                      {finances.fhOffsetYears} <span className="text-xs font-sans font-medium text-stone-500">Years</span>
+                      {finances.fhOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1.5">Years</span>
+                      {finances.fhOffsetYears !== "30+" && (
+                        <span className="text-xs font-sans font-medium text-emerald-600 block sm:inline">
+                          ({getMilestoneDateStr(finances.milestoneFHOffset.week)})
+                        </span>
+                      )}
                     </span>
                     <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
                       Est. Interest Prior: ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
@@ -2349,7 +2354,12 @@ export default function App() {
                       Portfolio Offset Freedom
                     </span>
                     <span className="text-2xl font-bold font-serif text-blue-900 block mt-1">
-                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500">Years</span>
+                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1.5">Years</span>
+                      {finances.bothOffsetYears !== "30+" && (
+                        <span className="text-xs font-sans font-medium text-blue-600 block sm:inline">
+                          ({getMilestoneDateStr(finances.milestoneFernOffset.week)})
+                        </span>
+                      )}
                     </span>
                     <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
                       Combined Est. Interest: ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
@@ -2483,126 +2493,87 @@ export default function App() {
                 {/* Restructuring recast breakdown box */}
                 <div className="bg-stone-50 border border-stone-200 rounded-xl p-4 sm:p-5 space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-2">
-                    <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 flex items-center gap-1.5 font-serif">
                       <span>🔄</span>
-                      <span>3. Cash Recasting Partition & weekly Cash Flow Comparison</span>
+                      <span>3. Cash Recasting Partition & Weekly Cash Flow Comparison</span>
                     </span>
                     <span className="bg-emerald-100 text-emerald-950 font-sans font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full">
                       Applied Recast Split: {inputs.internalVariationPct}%
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-stone-600">
-                    <div className="space-y-2 font-sans">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-xs text-stone-600">
+                    
+                    {/* Column 1: Asset Allocation & Recast Direction */}
+                    <div className="space-y-2.5 font-sans">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest font-sans block">
+                        Capital Recasting Allocation
+                      </span>
                       <p className="font-serif leading-relaxed text-[11px]">
-                        Upon the completion of settlements, a total of <strong className="text-slate-900">${Math.round(finances.totalPostSaleCashPool + finances.remainingDay1CashCushion).toLocaleString()}</strong> is compiled in cash.
-                        Your specified split directs:
+                        Upon completing settlements, a total cash pool of <strong className="text-slate-900">${Math.round(finances.totalPostSaleCashPool + finances.remainingDay1CashCushion).toLocaleString()}</strong> is compiled. Your specified split directs:
                       </p>
-                      <ul className="space-y-1.5 list-disc pl-4 text-[11px]">
+                      <ul className="space-y-1.5 list-disc pl-4 text-[11px] font-serif">
                         <li>
-                          <strong className="text-blue-900 font-semibold">{inputs.internalVariationPct}% reduction</strong>: <strong>${Math.round(finances.appliedToPrincipalReduction).toLocaleString()}</strong> is committed directly to reducing the loan principal.
+                          <strong className="text-blue-900">{inputs.internalVariationPct}% reduction</strong>: <strong>${Math.round(finances.appliedToPrincipalReduction).toLocaleString()}</strong> is paid directly to shrink the loan principal.
                         </li>
                         <li>
-                          <strong className="text-emerald-800 font-semibold font-mono">Offset preservation</strong>: <strong>${Math.round(finances.keptInOffsetAccount).toLocaleString()}</strong> remains liquid in your offset account (after deducting ${Math.round(inputs.fhRenoMovingCost ?? 10000).toLocaleString()} for moving and renovation allowances).
+                          <strong className="text-emerald-800">Offset preservation</strong>: <strong>${Math.round(finances.keptInOffsetAccount).toLocaleString()}</strong> is preserved in your offset account (leaving a liquid buffer after deducting ${Math.round(inputs.fhRenoMovingCost ?? 10000).toLocaleString()} for moving and reno outlays).
                         </li>
                       </ul>
                     </div>
 
-                    <div className="border border-stone-200/80 bg-white p-3 rounded-lg grid grid-cols-2 gap-4 divide-x divide-stone-100 shadow-sm font-sans">
-                      <div className="space-y-1 text-center">
-                        <span className="text-[10px] text-stone-400 uppercase font-semibold">Immediate Initial Repayment</span>
-                        <div className="text-lg font-bold font-mono text-stone-500 line-through">
-                          ${Math.round(finances.initialWeeklyPayment).toLocaleString()}
-                        </div>
-                        <span className="text-[9px] text-stone-400 block font-serif">/week during Peak Lag</span>
-                      </div>
-                      <div className="space-y-1 text-center pl-4">
-                        <span className="text-[10px] text-emerald-800 uppercase font-bold">Post-Recast Repayment</span>
-                        <div className="text-lg font-bold font-mono text-emerald-900">
-                          ${Math.round(finances.recastWeeklyPayment).toLocaleString()}
-                        </div>
-                        <span className="text-[10px] bg-emerald-100 text-emerald-950 font-bold px-1.5 py-0.2 rounded-full inline-block mt-0.5">
-                          Saved: ${Math.max(0, Math.round(finances.initialWeeklyPayment - finances.recastWeeklyPayment))} /wk
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Timeline and Transitions checklist */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                  <div className="space-y-2 font-sans">
-                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
-                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 font-serif">
-                        🗓️ 4. Logistical Schedule Milestones
+                    {/* Column 2: Individual Repayments & Gross Cash Flow */}
+                    <div className="space-y-2.5 font-sans border-t lg:border-t-0 lg:border-x border-stone-200 pb-2 lg:px-5">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">
+                        Committed Weekly Cash Flow
                       </span>
+                      <div className="space-y-2 text-stone-700">
+                        <div className="flex justify-between items-center text-[11px] pb-1 border-b border-stone-105 italic font-serif">
+                          <span>Gross net Family salary:</span>
+                          <span className="font-mono font-bold text-emerald-700">+$5,303.35/wk</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] pb-1 border-b border-stone-100 font-serif">
+                          <div>
+                            <span className="font-medium text-stone-800">Forever Home (Dynamic Recast):</span>
+                            <span className="text-[9px] block text-stone-400">Post-Recast P&I Repayment</span>
+                          </div>
+                          <span className="font-mono text-red-700 font-medium">-${Math.round(finances.recastWeeklyPayment)}/wk</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] pb-1 border-b border-stone-100 font-serif">
+                          <div>
+                            <span className="font-medium text-stone-800">Fern St Holiday House:</span>
+                            <span className="text-[9px] block text-stone-400">Constant Outlay</span>
+                          </div>
+                          <span className="font-mono text-red-700 font-medium font-semibold">-$784/wk</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px] font-bold text-slate-900 bg-stone-100 p-2 rounded">
+                          <span>Gross Discretionary Surplus:</span>
+                          <span className="font-mono text-blue-900">+${Math.round(WeeklyNetSalary - finances.totalCommittedWeeklyOutlays)}/wk</span>
+                        </div>
+                      </div>
                     </div>
-                    <ul className="space-y-2 text-xs">
-                      <li className="flex justify-between border-b border-stone-100 pb-1">
-                        <span className="text-stone-600 font-medium font-serif">Day 0 Settlement:</span>
-                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.fhSettle}</span>
-                      </li>
-                      <li className="flex justify-between border-b border-stone-100 pb-1">
-                        <span className="text-stone-600 font-medium font-serif">Paulan Court Preparation:</span>
-                        <span className="font-mono text-slate-800">Commences {timeline.dates.paulanPrepStart}</span>
-                      </li>
-                      <li className="flex justify-between border-b border-stone-100 pb-1">
-                        <span className="text-stone-600 font-medium font-serif">Paulan Court Settlement:</span>
-                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.paulanSettle}</span>
-                      </li>
-                      <li className="flex justify-between border-b border-stone-100 pb-1">
-                        <span className="text-stone-600 font-medium font-serif">Meryl Ranges Settlement:</span>
-                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.merylSettle}</span>
-                      </li>
-                      <li className="flex justify-between border-b border-stone-100 pb-1">
-                        <span className="text-stone-600 font-medium font-serif">Forever Home Move End:</span>
-                        <span className="font-mono text-slate-800 font-semibold">{timeline.dates.moveEnd}</span>
-                      </li>
-                    </ul>
-                  </div>
 
-                  {/* Transition constraints & alert messages */}
-                  <div className="space-y-2 font-sans">
-                    <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
-                      <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 font-serif">
-                        ⚖️ 5. Strategy & Transition Balance Check
+                    {/* Column 3: Extra Savings Setting & Uncommitted Net */}
+                    <div className="space-y-2.5 font-sans">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">
+                        Savings Plan & Surplus Limit
                       </span>
+                      
+                      <p className="font-serif leading-relaxed text-[11px]">
+                        Your planned budget allocates a **Weekly Extra Savings Rate** of <strong className="text-emerald-800 font-semibold">${inputs.weeklySavings.toLocaleString()}</strong> per week to accelerate loan offsets.
+                      </p>
+                      <p className="font-serif leading-relaxed text-[11px]">
+                        This leaves an **Uncommitted Discretionary Net** of <strong className={`font-semibold ${
+                          finances.leftoverDiscretionaryCash >= 0 ? "text-emerald-800" : "text-rose-800"
+                        }`}>${Math.round(finances.leftoverDiscretionaryCash).toLocaleString()} / week</strong>.
+                      </p>
+                      <p className="text-[11px] font-serif leading-relaxed text-stone-500 italic mt-1 pt-1 border-t border-stone-100">
+                        {finances.leftoverDiscretionaryCash >= 0
+                          ? "• A comfortable spare cushion is available to absorb multi-generation family overheads safely."
+                          : "⚠️ Warning: Extra weekly savings speed exceeds available gross cash flow; please adjust the savings setting in the main inputs or mortgage settings."}
+                      </p>
                     </div>
-                    <div className="space-y-2">
-                      {/* Check 1: Lag Alert */}
-                      {timeline.fhSettleEnd < timeline.merylSettleEnd ? (
-                        <div className="bg-amber-50 border border-amber-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-amber-950 font-serif leading-relaxed">
-                          <span>🔔</span>
-                          <div>
-                            <strong>Interest servicing lag active</strong>: settling on the Forever Home {Math.round(timeline.merylSettleEnd - timeline.fhSettleEnd)} days before Meryl's Twin Ranges cash proceeds are captured. Servicing is at peak debt level.
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-emerald-950 font-serif leading-relaxed">
-                          <span>✅</span>
-                          <div>
-                            <strong>Cash alignment secure</strong>: Meryl's Twin Ranges proceeds arrive or GFI is established on or before Forever Home settlement Day, reducing immediate debt exposure.
-                          </div>
-                        </div>
-                      )}
 
-                      {/* Check 2: Buffer cushion integrity */}
-                      {finances.isBufferCompromised ? (
-                        <div className="bg-rose-50 border border-rose-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-rose-950 font-serif leading-relaxed">
-                          <span>⚠️</span>
-                          <div>
-                            <strong>Cash buffer breached</strong>: Day 1 cash cushion of <strong>${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</strong> is below your preferred savings buffer parameter of <strong>${inputs.offsetBuffer.toLocaleString()}</strong>. Consider lowering the Forever Home purchase target.
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg flex gap-2 text-[11px] text-emerald-950 font-serif leading-relaxed">
-                          <span>✅</span>
-                          <div>
-                            <strong>Cash buffer satisfied</strong>: Remaining Day 1 liquid buffer of <strong>${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</strong> matches your preferred parameters.
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
 
