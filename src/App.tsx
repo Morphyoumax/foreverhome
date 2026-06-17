@@ -558,6 +558,28 @@ export default function App() {
     return 50;
   });
 
+  const [newBuildPostWeeklySavingsOverride, setNewBuildPostWeeklySavingsOverride] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_new_build_post_weekly_savings_override");
+      if (saved && saved !== "null") return parseInt(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (newBuildPostWeeklySavingsOverride === null) {
+        localStorage.removeItem("property_scenarios_v10_new_build_post_weekly_savings_override");
+      } else {
+        localStorage.setItem("property_scenarios_v10_new_build_post_weekly_savings_override", newBuildPostWeeklySavingsOverride.toString());
+      }
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [newBuildPostWeeklySavingsOverride]);
+
   useEffect(() => {
     try {
       localStorage.setItem("property_scenarios_v10_new_build_spend", newBuildSpend.toString());
@@ -7799,6 +7821,360 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* DYNAMIC POST-BUILD WEEKLY CASH FLOW ANALYSIS TABLE/TOOL */}
+                {(() => {
+                  const buildWeek = Math.round(newBuildTiming * 52);
+                  const isFHPaidOffByBuild = finances.fhPaidOffWeek !== -1 && buildWeek >= finances.fhPaidOffWeek;
+                  const isFernPaidOffByBuild = finances.fernPaidOffWeek !== -1 && buildWeek >= finances.fernPaidOffWeek;
+                  const isNBPaidOffByBuild = finances.nbPaidOffWeek !== -1 && buildWeek >= finances.nbPaidOffWeek;
+
+                  // 1. Weekly Income Calculation at newBuildTiming
+                  const activeExtraIncomes = futureIncomes.filter(inc => {
+                    const startY = inc.timingStartYears;
+                    const endY = inc.timingEndYears !== null ? inc.timingEndYears : 30;
+                    return newBuildTiming >= startY && newBuildTiming <= endY;
+                  });
+                  const totalActiveExtraWeeklyIncome = activeExtraIncomes.reduce((sum, inc) => {
+                    return sum + (inc.annualAmount * 0.85) / 52;
+                  }, 0);
+                  const baseWages = 5303.35;
+                  const totalWeeklyNetIncome = baseWages + totalActiveExtraWeeklyIncome;
+
+                  // 2. Weekly Outflow Calculations
+                  const fhRepayment = isFHPaidOffByBuild ? 0 : finances.recastWeeklyPayment;
+                  const fernRepayment = isFernPaidOffByBuild ? 0 : finances.fernWeeklyPayment;
+                  const nbRepayment = isNBPaidOffByBuild ? 0 : (finances.newBuildWeeklyPayment || 0);
+
+                  // Calculate active expense loans at newBuildTiming
+                  const activeExpenseLoansAtBuild = futureExpenses
+                    .filter(exp => exp.source === "new_loan" && exp.timingYears <= newBuildTiming)
+                    .map(exp => {
+                      const rLoanWeekly = (inputs.interestRate / 100) / 52;
+                      const nLoanWeeks = 30 * 52;
+                      const pmt = rLoanWeekly > 0 
+                        ? (exp.amount * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+                        : 0;
+                      return {
+                        name: exp.name || "Expense Loan",
+                        amount: exp.amount,
+                        payment: pmt,
+                      };
+                    });
+                  const totalExpenseLoansPayment = activeExpenseLoansAtBuild.reduce((sum, l) => sum + l.payment, 0);
+
+                  const totalRepayments = fhRepayment + fernRepayment + nbRepayment + totalExpenseLoansPayment;
+
+                  // Resolve the post-build weekly savings rate (defaulting to the other weekly savings rate variable)
+                  const finalWeeklySavings = newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : inputs.weeklySavings;
+
+                  // 3. Discretionary cash surplus calculations
+                  const grossCashSurplus = totalWeeklyNetIncome - totalRepayments;
+                  const netCashSurplus = grossCashSurplus - finalWeeklySavings;
+
+                  // Percentages for the waterfall visual representation
+                  const fhPct = Math.min(100, (fhRepayment / totalWeeklyNetIncome) * 100);
+                  const fernPct = Math.min(100, (fernRepayment / totalWeeklyNetIncome) * 100);
+                  const nbPct = Math.min(100, (nbRepayment / totalWeeklyNetIncome) * 100);
+                  const expPct = Math.min(100, (totalExpenseLoansPayment / totalWeeklyNetIncome) * 100);
+                  const savingsPct = Math.min(100, (finalWeeklySavings / totalWeeklyNetIncome) * 100);
+                  const leftoverPct = Math.max(0, 100 - (fhPct + fernPct + nbPct + expPct + savingsPct));
+
+                  return (
+                    <div className="mt-6 border border-purple-100 rounded-xl p-5 bg-gradient-to-br from-purple-50/35 to-zinc-50/20 shadow-sm space-y-4 font-serif">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-purple-100">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+                            <h5 className="font-bold text-sm text-purple-950 uppercase tracking-wider">
+                              Post-Build Weekly Cash Flow Analysis
+                            </h5>
+                          </div>
+                          <p className="text-[10px] text-stone-500 mt-0.5 leading-relaxed font-sans">
+                            A snapshot of your consolidated weekly household budget at <strong className="text-stone-705">Year {newBuildTiming.toFixed(1)} ({Math.round(newBuildTiming * 12)} months)</strong> once the new build construction concludes and mortgage repayments commence.
+                          </p>
+                        </div>
+                        <div className="bg-purple-100/50 px-2.5 py-1 rounded text-[10px] font-mono text-purple-950 font-bold text-center self-start sm:self-center">
+                          Active State: Yr {newBuildTiming.toFixed(1)}
+                        </div>
+                      </div>
+
+                      {/* POST-BUILD SAVINGS OVERRIDE SLIDER */}
+                      <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-150 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="space-y-1 md:max-w-md">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-sans font-bold text-xs text-purple-900">Post-New Build Weekly Savings Rate</span>
+                            {newBuildPostWeeklySavingsOverride !== null && (
+                              <button 
+                                onClick={() => setNewBuildPostWeeklySavingsOverride(null)}
+                                className="text-[10px] text-purple-600 hover:text-purple-800 font-sans font-semibold underline cursor-pointer"
+                                title="Click to match the global savings rate again"
+                              >
+                                (Reset to match global: ${inputs.weeklySavings}/wk)
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-stone-550 leading-normal font-sans">
+                            {newBuildPostWeeklySavingsOverride === null ? (
+                              <span className="text-stone-400 italic">Currently matching your global Weekly Extra Savings Rate of <strong>${inputs.weeklySavings}/wk</strong>. Drag the slider to override this specifically for the post-build period.</span>
+                            ) : (
+                              <span className="text-purple-800 font-semibold">Custom post-build rate active. The timeline trajectory is unaffected; this is for post-build budgeting simulation only.</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="w-full md:w-60 space-y-1.5 flex-shrink-0">
+                          <div className="flex justify-between text-xs font-sans">
+                            <span className="text-stone-400 font-normal">Adjustment:</span>
+                            <span className="font-mono font-bold text-purple-950">
+                              ${finalWeeklySavings.toLocaleString()}/wk
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={3000}
+                            step={50}
+                            value={finalWeeklySavings}
+                            onChange={(e) => setNewBuildPostWeeklySavingsOverride(parseInt(e.target.value))}
+                            className="w-full accent-purple-600 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                          />
+                          <div className="flex justify-between text-[9px] text-stone-400 font-sans">
+                            <span>$0/wk min</span>
+                            <span>$3,000/wk cap</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cash Flow Bento Cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-sans">
+                        {/* 1. Cash Inflows Card */}
+                        <div className="bg-white/90 p-4 border border-emerald-100 rounded-lg shadow-xs flex flex-col justify-between space-y-3">
+                          <div>
+                            <span className="text-[9.5px] uppercase font-sans font-extrabold tracking-widest text-emerald-800 block mb-2">
+                              1. Weekly Net Revenue (Inflows)
+                            </span>
+                            <div className="space-y-1.5 font-serif text-[11px]">
+                              <div className="flex justify-between text-stone-600 font-sans">
+                                <span>Locked Family Salary (Net):</span>
+                                <span className="font-mono font-semibold text-emerald-800">+${baseWages.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                              {activeExtraIncomes.map((inc, idx) => {
+                                const incWeekly = (inc.annualAmount * 0.85) / 52;
+                                return (
+                                  <div key={idx} className="flex justify-between text-stone-500 leading-snug font-sans">
+                                    <span className="truncate max-w-[150px]" title={inc.name}>
+                                      • {inc.name || "Other Income"}:
+                                    </span>
+                                    <span className="font-mono text-emerald-700 font-medium">+${incWeekly.toFixed(2)}</span>
+                                  </div>
+                                );
+                              })}
+                              {activeExtraIncomes.length === 0 && (
+                                <div className="text-[9.5px] text-stone-450 italic font-sans pt-1">
+                                  No additional active other income streams at Year {newBuildTiming.toFixed(1)}.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="border-t border-emerald-50 pt-2 flex justify-between items-end">
+                            <span className="font-bold text-[10.5px] text-emerald-950 font-sans">Total Net Income:</span>
+                            <span className="font-mono text-emerald-700 font-bold text-base leading-none">
+                              +${Math.round(totalWeeklyNetIncome).toLocaleString()}/wk
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 2. Debt Repayment Outflows Card */}
+                        <div className="bg-white/90 p-4 border border-rose-100 rounded-lg shadow-xs flex flex-col justify-between space-y-3">
+                          <div>
+                            <span className="text-[9.5px] uppercase font-sans font-extrabold tracking-widest text-rose-800 block mb-2">
+                              2. Loan Repayments (Outflows)
+                            </span>
+                            <div className="space-y-1.5 font-serif text-[11px]">
+                              <div className="flex justify-between text-stone-600 font-sans">
+                                <span>Forever Home P&amp;I:</span>
+                                {isFHPaidOffByBuild ? (
+                                  <span className="text-emerald-700 font-bold text-[9px] bg-emerald-50 px-1 rounded uppercase">PAID OFF</span>
+                                ) : (
+                                  <span className="font-mono font-semibold text-rose-700">-${Math.round(fhRepayment)}/wk</span>
+                                )}
+                              </div>
+                              <div className="flex justify-between text-stone-600 font-sans">
+                                <span>Fern St Holiday House:</span>
+                                {isFernPaidOffByBuild ? (
+                                  <span className="text-emerald-700 font-bold text-[9px] bg-emerald-50 px-1 rounded uppercase">PAID OFF</span>
+                                ) : (
+                                  <span className="font-mono font-semibold text-rose-700">-${Math.round(fernRepayment)}/wk</span>
+                                )}
+                              </div>
+                              <div className="flex justify-between text-stone-600 font-sans">
+                                <span>New Build Construction:</span>
+                                {isNBPaidOffByBuild ? (
+                                  <span className="text-emerald-700 font-bold text-[9px] bg-emerald-50 px-1 rounded uppercase">PAID OFF</span>
+                                ) : (
+                                  <span className="font-mono font-semibold text-rose-700">-${Math.round(nbRepayment)}/wk</span>
+                                )}
+                              </div>
+                              {activeExpenseLoansAtBuild.map((l, idx) => (
+                                <div key={idx} className="flex justify-between text-stone-500 leading-snug font-sans">
+                                  <span className="truncate max-w-[155px]" title={l.name}>
+                                    • {l.name}:
+                                  </span>
+                                  <span className="font-mono text-rose-600">-${Math.round(l.payment)}/wk</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="border-t border-rose-50 pt-2 flex justify-between items-end">
+                            <span className="font-bold text-[10.5px] text-rose-950 font-sans">Total Committed P&amp;I:</span>
+                            <span className="font-mono text-rose-700 font-bold text-base leading-none">
+                              -${Math.round(totalRepayments).toLocaleString()}/wk
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 3. Discretionary Surplus Buffer Card */}
+                        <div className="bg-white/90 p-4 border border-purple-100 rounded-lg shadow-xs flex flex-col justify-between space-y-3">
+                          <div>
+                            <span className="text-[9.5px] uppercase font-sans font-extrabold tracking-widest text-purple-900 block mb-2">
+                              3. Discretionary Cash Surplus
+                            </span>
+                            <div className="space-y-1.5 font-serif text-[11px]">
+                              <div className="flex justify-between text-stone-600 font-sans">
+                                <span>Gross Discretionary Cash:</span>
+                                <span className="font-mono text-purple-950 font-bold">+${Math.round(grossCashSurplus).toLocaleString()}/wk</span>
+                              </div>
+                              <div className="flex justify-between text-stone-500 font-sans">
+                                <div>
+                                  <span>Voluntary Weekly Savings:</span>
+                                  <span className="text-[9px] text-stone-400 block font-normal leading-none">
+                                    {newBuildPostWeeklySavingsOverride !== null ? "(Custom post-build rate)" : "(Set by global rate)"}
+                                  </span>
+                                </div>
+                                <span className="font-mono font-semibold text-stone-700">-${Math.round(finalWeeklySavings)}/wk</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="border-t border-purple-100 pt-2 flex justify-between items-end">
+                            <span className="font-bold text-[10.5px] text-zinc-900 font-sans">Net Excess Buffer:</span>
+                            <span className={`font-mono font-extrabold text-base leading-none ${netCashSurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                              ${Math.round(netCashSurplus).toLocaleString()}/wk
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cash Flow Distribution Waterfall Progress Bar */}
+                      <div className="p-3 bg-white/70 border border-purple-100/40 rounded-lg space-y-2">
+                        <div className="flex justify-between items-center text-[10px] text-stone-500 font-sans font-semibold">
+                          <span>WEEKLY INCOME ALLOCATION WATERFALL</span>
+                          <span className="font-mono text-[9px] text-purple-950 bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded leading-none">100% of Net Earnings</span>
+                        </div>
+
+                        {/* Bar with rounded chunks */}
+                        <div className="w-full h-3.5 bg-stone-100 rounded-full flex overflow-hidden">
+                          {fhRepayment > 0 && (
+                            <div 
+                              className="bg-indigo-500 border-r border-white/20 transition-all duration-300"
+                              style={{ width: `${fhPct}%` }}
+                              title={`Forever Home P&I: $${Math.round(fhRepayment)}/wk (${fhPct.toFixed(1)}%)`}
+                            />
+                          )}
+                          {fernRepayment > 0 && (
+                            <div 
+                              className="bg-teal-500 border-r border-white/20 transition-all duration-300"
+                              style={{ width: `${fernPct}%` }}
+                              title={`Fern St P&I: $${Math.round(fernRepayment)}/wk (${fernPct.toFixed(1)}%)`}
+                            />
+                          )}
+                          {nbRepayment > 0 && (
+                            <div 
+                              className="bg-purple-600 border-r border-white/20 transition-all duration-300"
+                              style={{ width: `${nbPct}%` }}
+                              title={`New Build Construction P&I: $${Math.round(nbRepayment)}/wk (${nbPct.toFixed(1)}%)`}
+                            />
+                          )}
+                          {totalExpenseLoansPayment > 0 && (
+                            <div 
+                              className="bg-rose-500 border-r border-white/20 transition-all duration-350"
+                              style={{ width: `${expPct}%` }}
+                              title={`Expense Loans: $${Math.round(totalExpenseLoansPayment)}/wk (${expPct.toFixed(1)}%)`}
+                            />
+                          )}
+                          {finalWeeklySavings > 0 && (
+                            <div 
+                              className="bg-sky-500 border-r border-white/20 transition-all duration-300"
+                              style={{ width: `${savingsPct}%` }}
+                              title={`Voluntary Savings: $${Math.round(finalWeeklySavings)}/wk (${savingsPct.toFixed(1)}%)`}
+                            />
+                          )}
+                          {leftoverPct > 0 && (
+                            <div 
+                              className="bg-emerald-400 transition-all duration-300"
+                              style={{ width: `${leftoverPct}%` }}
+                              title={`Remaining Free Cushion: $${Math.round(grossCashSurplus - finalWeeklySavings)}/wk (${leftoverPct.toFixed(1)}%)`}
+                            />
+                          )}
+                        </div>
+
+                        {/* Allocation Color Labels Row */}
+                        <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[9.5px] font-medium text-stone-500 font-sans leading-none pt-0.5">
+                          {fhRepayment > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded bg-indigo-500 inline-block"></span>
+                              <span>FH: <span className="font-mono text-[9px] font-bold text-stone-750">${Math.round(fhRepayment)}/wk</span></span>
+                            </div>
+                          )}
+                          {fernRepayment > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded bg-teal-500 inline-block"></span>
+                              <span>Fern St: <span className="font-mono text-[9px] font-bold text-stone-750">${Math.round(fernRepayment)}/wk</span></span>
+                            </div>
+                          )}
+                          {nbRepayment > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded bg-purple-600 inline-block"></span>
+                              <span className="text-purple-900 font-bold">New Build: <span className="font-mono text-[9px]">${Math.round(nbRepayment)}/wk</span></span>
+                            </div>
+                          )}
+                          {totalExpenseLoansPayment > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded bg-rose-500 inline-block"></span>
+                              <span>Extra Loans: <span className="font-mono text-[9px] font-bold text-stone-750">${Math.round(totalExpenseLoansPayment)}/wk</span></span>
+                            </div>
+                          )}
+                          {finalWeeklySavings > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded bg-sky-500 inline-block"></span>
+                              <span>Vol Savings: <span className="font-mono text-[9px] font-bold text-stone-750">${Math.round(finalWeeklySavings)}/wk</span></span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 ml-auto">
+                            <span className="w-2 h-2 rounded bg-emerald-400 inline-block"></span>
+                            <span className="text-emerald-800 font-bold">Uncommitted Net Buffer: <span className="font-mono text-[9px]">${Math.round(netCashSurplus)}/wk</span></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Warnings / Insights Row */}
+                      {netCashSurplus < 0 ? (
+                        <div className="flex items-start gap-2 bg-rose-50 border border-rose-100/60 p-2.5 text-[10px] text-rose-850 rounded font-sans leading-relaxed">
+                          <Icons.Warning className="w-4 h-4 text-rose-700 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="font-bold text-rose-950">Attention Needed:</strong> Your current budget setup leads to a net cash flow deficit of <span className="font-mono font-extrabold text-rose-900">${Math.abs(Math.round(netCashSurplus))}/week</span> after voluntary savings. Consider reducing your custom post-build weekly savings contribution (`${finalWeeklySavings}/wk`) or scheduling a larger offset draw contribution ratio to scale down the formed build mortgage.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2 bg-emerald-50/70 border border-emerald-100/40 p-2.5 text-[10px] text-emerald-850 rounded font-sans leading-relaxed">
+                          <Icons.CheckCircle className="w-4 h-4 text-emerald-700 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <strong className="font-bold text-emerald-950">Comfortable Cushion Secured:</strong> You retain <span className="font-mono font-extrabold text-emerald-950">${Math.round(netCashSurplus)}/week</span> in uncommitted excess cash flow buffer AFTER accounting for contractual repayments, custom post-build lifestyle savings pool allocations, and the new construction mortgage payments!
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* SECTION: Impact on Finances in the Future */}
