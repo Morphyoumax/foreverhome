@@ -982,6 +982,9 @@ export default function App() {
     let baselineHalfOffsetWeek = -1;
     let baselineFullyOffsetWeek = -1;
 
+    let bFhTotalInterestPaid = 0;
+    let bFernTotalInterestPaid = 0;
+
     let bMilestoneFHOffset = {
       fhLoan: 0,
       fhOffset: 0,
@@ -1039,6 +1042,9 @@ export default function App() {
 
       const fhInterest = Math.max(0, bSimLoanFH - bSimOffsetFH) * rWeeklyFHSim;
       const fernInterest = Math.max(0, bSimLoanFern - bSimOffsetFern) * rWeeklyFernSim;
+
+      bFhTotalInterestPaid += fhInterest;
+      bFernTotalInterestPaid += fernInterest;
 
       let actualFhPaymentPaid = 0;
       let fhPrincipalReduction = 0;
@@ -1982,6 +1988,9 @@ export default function App() {
       fhTotalPaidSim,
       fernTotalPaidSim,
       nbTotalPaidSim,
+      baselineFhTotalInterestPaid: bFhTotalInterestPaid,
+      baselineFernTotalInterestPaid: bFernTotalInterestPaid,
+      baselineTotalInterestPaid: bFhTotalInterestPaid + bFernTotalInterestPaid,
     };
   }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct]);
 
@@ -3023,70 +3032,247 @@ export default function App() {
                 </div>
 
                 {/* Key Summary Milestones KPI Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-stone-100 pb-5">
-                  <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl text-center shadow-inner">
-                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
-                      FH Offset Achievement
-                    </span>
-                    <span className="text-2xl font-bold font-serif text-emerald-800 block mt-1">
-                      {finances.fhOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1.5">Years</span>
-                      {finances.fhOffsetYears !== "30+" && (
-                        <span className="text-xs font-sans font-medium text-emerald-600 block sm:inline">
-                          ({getMilestoneDateStr(finances.milestoneFHOffset.week)})
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
-                      Est. Interest Prior: ${Math.round(finances.fhInterestAtOffset).toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl text-center shadow-inner">
-                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-b border-stone-100 pb-6">
+                  {/* KPI 1: Est. Year of Total Portfolio Freedom */}
+                  <div className="bg-emerald-50/70 border border-emerald-150 p-4 rounded-xl text-center shadow-xs">
+                    <span className="text-[10px] text-emerald-800 font-bold uppercase tracking-wider block font-sans">
                       Portfolio Offset Freedom
                     </span>
-                    <span className="text-2xl font-bold font-serif text-blue-900 block mt-1">
-                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1.5">Years</span>
+                    <span className="text-2xl font-bold font-serif text-emerald-900 block mt-1">
+                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1">Years</span>
                       {finances.bothOffsetYears !== "30+" && (
-                        <span className="text-xs font-sans font-medium text-blue-600 block sm:inline">
-                          ({getMilestoneDateStr(finances.milestoneFernOffset.week)})
+                        <span className="text-xs font-sans font-medium text-emerald-700 block sm:inline">
+                          ({getMilestoneDateStr(finances.bothNeutralizedWeek)})
                         </span>
                       )}
                     </span>
-                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
-                      Combined Est. Interest: ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                    <span className="text-[10px] text-stone-550 block mt-1 font-sans leading-tight">
+                      When combined offsets completely neutralize all active debts.
                     </span>
                   </div>
 
-                  <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-xl text-center shadow-inner">
-                    <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider block font-sans">
-                      Stabilized Weekly Committed
+                  {/* KPI 2: Consolidated Lifetime Interest Saved */}
+                  {(() => {
+                    const activeTotalInterest = finances.fhTotalInterestPaidSim + finances.fernTotalInterestPaidSim + (newBuildSpend > 0 ? finances.nbTotalInterestPaidSim : 0);
+                    const baselineTotalInterest = finances.baselineTotalInterestPaid ?? 0;
+                    const interestSaved = Math.max(0, baselineTotalInterest - activeTotalInterest);
+                    return (
+                      <div className="bg-blue-50/70 border border-blue-150 p-4 rounded-xl text-center shadow-xs">
+                        <span className="text-[10px] text-blue-800 font-bold uppercase tracking-wider block font-sans">
+                          Lifetime Interest Saved
+                        </span>
+                        <span className="text-2xl font-bold font-serif text-blue-900 block mt-1">
+                          ${Math.round(interestSaved).toLocaleString()}
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-sans block mt-1 font-medium bg-emerald-100/50 py-0.5 px-1.5 rounded-full inline-block">
+                          Active: ${Math.round(activeTotalInterest).toLocaleString()} vs Base: ${Math.round(baselineTotalInterest).toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* KPI 3: Year 30 Projected Net Wealth */}
+                  {(() => {
+                    const activeY30 = finances.simulationData[finances.simulationData.length - 1]?.netWealth || 0;
+                    const baselineY30 = finances.baselineSimulationData[finances.baselineSimulationData.length - 1]?.netWealth || 0;
+                    const delta = activeY30 - baselineY30;
+                    return (
+                      <div className="bg-purple-50/70 border border-purple-150 p-4 rounded-xl text-center shadow-xs">
+                        <span className="text-[10px] text-purple-800 font-bold uppercase tracking-wider block font-sans">
+                          Year 30 Projected Net Wealth
+                        </span>
+                        <span className="text-2xl font-bold font-serif text-purple-900 block mt-1">
+                          ${Math.round(activeY30).toLocaleString()}
+                        </span>
+                        <span className={`text-[10px] font-sans font-bold block mt-1 py-0.5 px-1.5 rounded-full inline-block ${delta >= 0 ? "text-emerald-700 bg-emerald-100/50" : "text-rose-700 bg-rose-100/50"}`}>
+                          Delta: {delta >= 0 ? "+" : ""}${Math.round(delta).toLocaleString()} vs Base
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* KPI 4: Recirculation Cascade System */}
+                  <div className="bg-amber-50/70 border border-amber-100 p-4 rounded-xl text-center shadow-xs">
+                    <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block font-sans">
+                      Weekly Outlays vs Strain
                     </span>
-                    <span className="text-2xl font-bold font-serif text-amber-800 block mt-1">
+                    <span className="text-2xl font-bold font-serif text-amber-900 block mt-1">
                       ${Math.round(finances.totalCommittedWeeklyOutlays).toLocaleString()} <span className="text-xs font-sans font-medium text-stone-500">/wk</span>
                     </span>
-                    <span className="text-[10px] text-stone-400 block mt-0.5 font-sans">
-                      Income Strain: {finances.mortgageToIncomeRatio.toFixed(1)}% of Net
+                    <span className="text-[10px] text-stone-550 block mt-1 font-sans leading-tight">
+                      Income Strain: <strong>{finances.mortgageToIncomeRatio.toFixed(1)}%</strong> of Net. Active Cascade repayment loops enabled.
                     </span>
                   </div>
                 </div>
 
-                {/* A4 Balance Sheet block */}
+                {/* ADVANCED MORTGAGE TRAJECTORIES COMPARISON */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+                    <Icons.Settings className="w-4 h-4 text-slate-800" />
+                    <h3 className="text-sm font-bold font-serif uppercase tracking-wider text-slate-900">
+                      I. Model Active Mortgages and Cascading Repayments
+                    </h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Forever Home Loan */}
+                    <div className="border border-stone-200 rounded-xl p-4 space-y-3 bg-stone-50/30">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[9px] bg-blue-100 text-blue-900 font-bold px-1.5 py-0.5 rounded uppercase font-sans">
+                            Primary Home
+                          </span>
+                          <h4 className="text-xs font-bold text-stone-900 font-serif mt-1">
+                            Forever Home Mortgage
+                          </h4>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-blue-900 bg-white border border-stone-200 px-2 py-0.5 rounded shadow-2xs">
+                          {inputs.interestRate}% P&I
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs text-stone-700 font-serif">
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Starting Principal:</span>
+                          <span className="font-mono font-semibold">${Math.round(finances.recastForeverHomeLoanPrincipal).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Weekly Repayment:</span>
+                          <span className="font-mono font-semibold text-rose-800">-${Math.round(finances.recastWeeklyPayment)}/wk</span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Status @ Offset:</span>
+                          <span className="font-semibold text-emerald-800 font-sans">
+                            {finances.fhNeutralizedWeek !== -1 ? `Yr ${(finances.fhNeutralizedWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Fully Paid Off:</span>
+                          <span className="font-semibold text-blue-900 font-sans">
+                            {finances.fhPaidOffWeek !== -1 ? `Yr ${(finances.fhPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-stone-900 pt-1 font-bold">
+                          <span>Lifetime Interest Paid:</span>
+                          <span className="font-mono text-amber-800">${Math.round(finances.fhTotalInterestPaidSim).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fern St Holiday House */}
+                    <div className="border border-stone-200 rounded-xl p-4 space-y-3 bg-stone-50/30">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[9px] bg-cyan-100 text-cyan-900 font-bold px-1.5 py-0.5 rounded uppercase font-sans">
+                            Holiday House
+                          </span>
+                          <h4 className="text-xs font-bold text-stone-900 font-serif mt-1">
+                            Fern St Mortgage
+                          </h4>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-cyan-900 bg-white border border-stone-200 px-2 py-0.5 rounded shadow-2xs">
+                          5.95% P&I
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5 text-xs text-stone-700 font-serif">
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Starting Principal:</span>
+                          <span className="font-mono font-semibold">$392,000</span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Weekly Repayment:</span>
+                          <span className="font-mono font-semibold text-rose-800">-${Math.round(finances.fernWeeklyPayment)}/wk</span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Status @ Offset:</span>
+                          <span className="font-semibold text-emerald-800 font-sans">
+                            {finances.fernNeutralizedWeek !== -1 ? `Yr ${(finances.fernNeutralizedWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                          <span>Fully Paid Off:</span>
+                          <span className="font-semibold text-blue-900 font-sans">
+                            {finances.fernPaidOffWeek !== -1 ? `Yr ${(finances.fernPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-stone-900 pt-1 font-bold">
+                          <span>Lifetime Interest Paid:</span>
+                          <span className="font-mono text-amber-800">${Math.round(finances.fernTotalInterestPaidSim).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* New Build proposed or Active new loans */}
+                    <div className="border border-stone-200 rounded-xl p-4 space-y-3 bg-stone-50/30">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase font-sans ${newBuildSpend > 0 ? "bg-amber-100 text-amber-900" : "bg-stone-200 text-stone-600"}`}>
+                            {newBuildSpend > 0 ? "Construction Mortgage" : "Construction"}
+                          </span>
+                          <h4 className="text-xs font-bold text-stone-900 font-serif mt-1">
+                            New Build Loan
+                          </h4>
+                        </div>
+                        {newBuildSpend > 0 && (
+                          <span className="text-xs font-mono font-bold text-amber-900 bg-white border border-stone-200 px-2 py-0.5 rounded shadow-2xs">
+                            {inputs.interestRate}% P&I
+                          </span>
+                        )}
+                      </div>
+
+                      {newBuildSpend > 0 ? (
+                        <div className="space-y-1.5 text-xs text-stone-700 font-serif">
+                          <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                            <span>Initial Loan Amount:</span>
+                            <span className="font-mono font-semibold">${Math.round(newBuildSpend).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                            <span>Weekly Repayment:</span>
+                            <span className="font-mono font-semibold text-rose-800">-${Math.round(finances.newBuildWeeklyPayment)}/wk</span>
+                          </div>
+                          <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                            <span>Status @ Offset:</span>
+                            <span className="font-semibold text-emerald-800 font-sans">
+                              {finances.nbFullyOffsetWeek !== -1 ? `Yr ${(finances.nbFullyOffsetWeek / 52).toFixed(1)}` : "30+ Years"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between border-b border-dashed border-stone-200 pb-1">
+                            <span>Fully Paid Off:</span>
+                            <span className="font-semibold text-blue-900 font-sans">
+                              {finances.nbPaidOffWeek !== -1 ? `Yr ${(finances.nbPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-stone-900 pt-1 font-bold">
+                            <span>Lifetime Interest Paid:</span>
+                            <span className="font-mono text-amber-800">${Math.round(finances.nbTotalInterestPaidSim).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-stone-500 font-serif leading-relaxed italic text-center py-6">
+                          Proposed New Build currently inactive. Define a custom budget on the Mortgage Settings tab to model construction outlays.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* PROPERTY PORTFOLIO & RECIRCULATION REALIZATION COMPONENT */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-2">
                   
                   {/* Property Assets & Sales Matrix */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
                       <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800">
-                        1. Assets & Inflow Realization
+                        1. Real Estate Asset Base & Liquidity Waterfall
                       </span>
                     </div>
                     <table className="w-full text-xs text-left text-stone-600 font-sans">
                       <thead>
                         <tr className="border-b border-stone-100 text-stone-400">
-                          <th className="py-2 font-medium">Property Interest</th>
-                          <th className="py-2 text-right font-medium">Scenario Target</th>
-                          <th className="py-2 text-right font-medium">Net Est. Inflow</th>
+                          <th className="py-2 font-medium">Asset Source</th>
+                          <th className="py-2 text-right font-medium">Gross Target Price</th>
+                          <th className="py-2 text-right font-medium">Net Est. Proceeds</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3133,48 +3319,51 @@ export default function App() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-1.5 border-b border-stone-200 pb-1.5">
                       <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800">
-                        2. Acquisitions & Outlays (Initial)
+                        2. Capital Expenditures & Acquisition outlays
                       </span>
                     </div>
                     <table className="w-full text-xs text-left text-stone-600 font-sans">
                       <thead>
                         <tr className="border-b border-stone-100 text-stone-400">
-                          <th className="py-2 font-medium">Acquisition Element</th>
-                          <th className="py-2 text-right font-medium">Value / Expense</th>
-                          <th className="py-2 text-right font-medium">Friction Subtotal</th>
+                          <th className="py-2 font-medium">Friction Element</th>
+                          <th className="py-2 text-right font-medium">Value / Outlay</th>
+                          <th className="py-2 text-right font-medium">Status / Impact</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr className="border-b border-stone-100 hover:bg-stone-50/50">
                           <td className="py-2.5 font-medium text-stone-850">Forever Home Purchase Price</td>
                           <td className="py-2.5 text-right font-mono">${inputs.purchasePrice.toLocaleString()}</td>
-                          <td className="py-2.5 text-right font-mono text-stone-500">-</td>
+                          <td className="py-2.5 text-right font-sans text-stone-500">Day 1 Capital</td>
                         </tr>
                         <tr className="border-b border-stone-100 hover:bg-stone-50/50">
                           <td className="py-2.5 font-medium text-stone-850">Stamp Duty Friction (Victoria)</td>
-                          <td className="py-2.5 text-right font-mono">-</td>
-                          <td className="py-2.5 text-right font-mono font-semibold text-rose-800">
-                            ${Math.round(finances.stampDuty).toLocaleString()}
-                          </td>
+                          <td className="py-2.5 text-right font-mono">${Math.round(finances.stampDuty).toLocaleString()}</td>
+                          <td className="py-2.5 text-right text-rose-800 font-semibold font-sans">Friction Loss</td>
                         </tr>
                         <tr className="border-b border-stone-100 hover:bg-stone-50/50">
-                          <td className="py-2.5 font-medium text-stone-850">Rego / Conveyancy Process</td>
-                          <td className="py-2.5 text-right font-mono">-</td>
-                          <td className="py-2.5 text-right font-mono text-rose-800 font-semibold">
-                            $5,000
-                          </td>
+                          <td className="py-2.5 font-medium text-stone-850">Rego, Conveyancing & Fees</td>
+                          <td className="py-2.5 text-right font-mono">$5,000</td>
+                          <td className="py-2.5 text-right text-rose-800 font-semibold font-sans">Process Friction</td>
                         </tr>
-                        <tr className="border-b border-stone-100 hover:bg-stone-50/50 bg-stone-50/40">
-                          <td className="py-2.5 font-medium text-stone-850">Initial Peak Forever Home Loan</td>
+                        <tr className="border-b border-stone-100 hover:bg-stone-50/50">
+                          <td className="py-2.5 font-medium text-stone-850">Forever Home Initial Loan</td>
                           <td className="py-2.5 text-right font-mono font-bold text-blue-900">${Math.round(finances.loanRequired).toLocaleString()}</td>
-                          <td className="py-2.5 text-right font-mono text-stone-500" title="Concurrent peak loan value">-</td>
+                          <td className="py-2.5 text-right text-emerald-800 font-semibold font-sans" title="Concurrent peak loan value">Funded debt</td>
                         </tr>
-                        <tr className="border-t-2 border-stone-200 bg-stone-50/50 font-bold">
-                          <td className="py-3 text-stone-900 font-serif">Total Physical Land outlays</td>
-                          <td className="py-3 text-right font-mono">-</td>
+                        {newBuildSpend > 0 && (
+                          <tr className="border-b border-stone-100 hover:bg-stone-50/50 bg-amber-50/20">
+                            <td className="py-2.5 font-medium text-stone-850">Proposed New Build spend</td>
+                            <td className="py-2.5 text-right font-mono font-bold text-amber-950">${Math.round(newBuildSpend).toLocaleString()}</td>
+                            <td className="py-2.5 text-right text-amber-800 font-semibold font-sans">Yr {newBuildTiming} Capex</td>
+                          </tr>
+                        )}
+                        <tr className="border-t-2 border-stone-200 bg-stone-50/50 font-bold font-serif">
+                          <td className="py-3 text-stone-900">Total Asset Acquisition Outlay</td>
                           <td className="py-3 text-right font-mono text-blue-900">
-                            ${Math.round(finances.totalAcquisitionCost).toLocaleString()}
+                            ${Math.round(finances.totalAcquisitionCost + (newBuildSpend > 0 ? newBuildSpend : 0)).toLocaleString()}
                           </td>
+                          <td className="py-3 text-right text-stone-400 font-sans">-</td>
                         </tr>
                       </tbody>
                     </table>
@@ -3187,7 +3376,7 @@ export default function App() {
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-stone-200 pb-2">
                     <span className="text-xs font-bold font-serif uppercase tracking-wider text-slate-800 flex items-center gap-1.5 font-serif">
                       <span>🔄</span>
-                      <span>3. Cash Recasting Partition & Weekly Cash Flow Comparison</span>
+                      <span>3. Cash Recasting Partition & Progressive Cash Flow Recirculation</span>
                     </span>
                     <span className="bg-emerald-100 text-emerald-950 font-sans font-bold text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full">
                       Applied Recast Split: {inputs.internalVariationPct}%
@@ -3238,9 +3427,18 @@ export default function App() {
                           </div>
                           <span className="font-mono text-red-700 font-medium font-semibold">-$784/wk</span>
                         </div>
+                        {newBuildSpend > 0 && (
+                          <div className="flex justify-between items-center text-[11px] pb-1 border-b border-stone-100 font-serif">
+                            <div>
+                              <span className="font-medium text-stone-800">New Build Mortgage:</span>
+                              <span className="text-[9px] block text-stone-400">Proposed Construction Outlay</span>
+                            </div>
+                            <span className="font-mono text-red-750 font-medium font-semibold">-${Math.round(finances.newBuildWeeklyPayment)}/wk</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center text-[11px] font-bold text-slate-900 bg-stone-100 p-2 rounded">
                           <span>Gross Discretionary Surplus:</span>
-                          <span className="font-mono text-blue-900">+${Math.round(WeeklyNetSalary - finances.totalCommittedWeeklyOutlays)}/wk</span>
+                          <span className="font-mono text-blue-900">+${Math.round(WeeklyNetSalary - finances.totalCommittedWeeklyOutlays - (newBuildSpend > 0 ? finances.newBuildWeeklyPayment : 0))}/wk</span>
                         </div>
                       </div>
                     </div>
@@ -3248,21 +3446,19 @@ export default function App() {
                     {/* Column 3: Extra Savings Setting & Uncommitted Net */}
                     <div className="space-y-2.5 font-sans">
                       <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">
-                        Savings Plan & Surplus Limit
+                        Savings Plan & Repayment Redirection
                       </span>
                       
                       <p className="font-serif leading-relaxed text-[11px]">
                         Your planned budget allocates a **Weekly Extra Savings Rate** of <strong className="text-emerald-800 font-semibold">${inputs.weeklySavings.toLocaleString()}</strong> per week to accelerate loan offsets.
                       </p>
                       <p className="font-serif leading-relaxed text-[11px]">
-                        This leaves an **Uncommitted Discretionary Net** of <strong className={`font-semibold ${
-                          finances.leftoverDiscretionaryCash >= 0 ? "text-emerald-800" : "text-rose-800"
-                        }`}>${Math.round(finances.leftoverDiscretionaryCash).toLocaleString()} / week</strong>.
+                        <strong>Redirection cascade active:</strong> as individual loans are fully paid off, their respective weekly repayments are dynamically redirected into remaining offsets, compounding the speed of your portfolio\'s debt reduction.
                       </p>
-                      <p className="text-[11px] font-serif leading-relaxed text-stone-500 italic mt-1 pt-1 border-t border-stone-100">
-                        {finances.leftoverDiscretionaryCash >= 0
-                          ? "• A comfortable spare cushion is available to absorb multi-generation family overheads safely."
-                          : "⚠️ Warning: Extra weekly savings speed exceeds available gross cash flow; please adjust the savings setting in the main inputs or mortgage settings."}
+                      <p className="font-serif leading-relaxed text-[11px] mt-1.5 pt-1.5 border-t border-stone-100">
+                        Uncommitted Discretionary Net: <strong className={`font-semibold ${
+                          (finances.leftoverDiscretionaryCash - (newBuildSpend > 0 ? finances.newBuildWeeklyPayment : 0)) >= 0 ? "text-emerald-800" : "text-rose-800"
+                        }`}>${Math.round(finances.leftoverDiscretionaryCash - (newBuildSpend > 0 ? finances.newBuildWeeklyPayment : 0)).toLocaleString()} / week</strong>.
                       </p>
                     </div>
 
