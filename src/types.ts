@@ -56,5 +56,26 @@ export interface SimulationDataPoint {
   offsetFH: number;
   loanFern: number;
   offsetFern: number;
+  newLoansPayable?: number;
+  newLoansOffset?: number;
+  newBuildLoan?: number;
+  newBuildOffset?: number;
+  extraCashSavings?: number;
   netDebt: number;
+}
+
+export interface FutureExpense {
+  id: string;
+  name: string;
+  amount: number;
+  timingYears: number; // select in 1-month increments (steps of 1/12)
+  source: "offset_fh" | "offset_fern" | "new_loan";
+}
+
+export interface FutureIncome {
+  id: string;
+  name: string;
+  annualAmount: number;
+  timingStartYears: number; // start timing (steps of 1/12)
+  timingEndYears: number | null; // null means indefinite
 }

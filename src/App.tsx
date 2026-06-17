@@ -4,6 +4,8 @@ import {
   PropertyScenario,
   ActiveInteraction,
   SimulationDataPoint,
+  FutureExpense,
+  FutureIncome,
 } from "./types";
 
 const Icons = {
@@ -430,7 +432,7 @@ export default function App() {
   const [newTimelineScenarioName, setNewTimelineScenarioName] = useState("");
   const [activeInteraction, setActiveInteraction] = useState<ActiveInteraction | null>(null);
   const [isPaulanLinkedHovered, setIsPaulanLinkedHovered] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "mortgage" | "settles" | "propertyResearch">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "mortgage" | "settles" | "propertyResearch" | "futureExpenses">("overview");
   const [trajectoryTableMode, setTrajectoryTableMode] = useState<"key" | "all">("key");
   const [trajectorySearch, setTrajectorySearch] = useState("");
   const [researchUrlOrAddress, setResearchUrlOrAddress] = useState("");
@@ -454,10 +456,139 @@ export default function App() {
     landSize: string;
     keyFeatures: string[];
     description: string;
-    travelTimes: { destination: string; duration: string }[];
     isFallback?: boolean;
   } | null>(null);
   const [researchSources, setResearchSources] = useState<{ title: string; uri: string }[]>([]);
+  const [useSearch, setUseSearch] = useState<boolean>(false);
+
+  const [futureExpenses, setFutureExpenses] = useState<FutureExpense[]>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_future_expenses");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return [
+      {
+        id: "exp-1",
+        name: "Construction/Renovation Drawdown",
+        amount: 150000,
+        timingYears: 2.0,
+        source: "new_loan",
+      },
+      {
+        id: "exp-2",
+        name: "SUV / Tractor Purchase",
+        amount: 35000,
+        timingYears: 1.5,
+        source: "offset_fh",
+      },
+    ];
+  });
+
+  const [futureIncomes, setFutureIncomes] = useState<FutureIncome[]>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_future_incomes");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return [
+      {
+        id: "inc-1",
+        name: "Acreage Cattle Agistment",
+        annualAmount: 30000,
+        timingStartYears: 2.0,
+        timingEndYears: null,
+      },
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_future_expenses", JSON.stringify(futureExpenses));
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [futureExpenses]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_future_incomes", JSON.stringify(futureIncomes));
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [futureIncomes]);
+
+  // New Build State Hooks
+  const [newBuildSpend, setNewBuildSpend] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_new_build_spend");
+      if (saved) return parseInt(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return 350000;
+  });
+  const [newBuildTiming, setNewBuildTiming] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_new_build_timing");
+      if (saved) return parseFloat(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return 2.5;
+  });
+  const [newBuildBuffer, setNewBuildBuffer] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_new_build_buffer");
+      if (saved) return parseInt(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return 50000;
+  });
+  const [newBuildDrawChoicePct, setNewBuildDrawChoicePct] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("property_scenarios_v10_new_build_draw_choice_pct");
+      if (saved) return parseInt(saved);
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+    return 50;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_new_build_spend", newBuildSpend.toString());
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [newBuildSpend]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_new_build_timing", newBuildTiming.toString());
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [newBuildTiming]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_new_build_buffer", newBuildBuffer.toString());
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [newBuildBuffer]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("property_scenarios_v10_new_build_draw_choice_pct", newBuildDrawChoicePct.toString());
+    } catch (e) {
+      console.warn("Storage exception handled cleanly.", e);
+    }
+  }, [newBuildDrawChoicePct]);
 
   const handleApplyEstimatedPrice = () => {
     if (researchReport && typeof researchReport.estimatedPrice === "number") {
@@ -484,7 +615,10 @@ export default function App() {
       const response = await fetch("/api/generate-property-report", {
         method: "POST",
         headers,
-        body: JSON.stringify({ urlOrAddress: researchUrlOrAddress.trim() }),
+        body: JSON.stringify({ 
+          urlOrAddress: researchUrlOrAddress.trim(),
+          useSearch: useSearch
+        }),
       });
       
       const data = await response.json();
@@ -834,24 +968,179 @@ export default function App() {
     const leftoverDiscretionaryCash =
       WeeklyNetSalary - totalCommittedWeeklyOutlays - inputs.weeklySavings;
 
-    // Run 15-Year Portfolio Simulation
+    // PART A: Run Baseline Portfolio Simulation (ignoring future expenses and other incomes)
+    const w_build = Math.round(newBuildTiming * 52);
+    const baselineSimulationData: SimulationDataPoint[] = [];
+    let bSimLoanFH = recastForeverHomeLoanPrincipal;
+    let bSimOffsetFH = recastOffsetBalance;
+    let bSimLoanFern = ACCOUNT_BALANCES.fernLoan;
+    let bSimOffsetFern = 0;
+    let bSimExtraCashSavings = 0;
+
+    let baselineFhNeutralizedWeek = -1;
+    let baselineBothNeutralizedWeek = -1;
+    let baselineHalfOffsetWeek = -1;
+    let baselineFullyOffsetWeek = -1;
+
+    let bMilestoneFHOffset = {
+      fhLoan: 0,
+      fhOffset: 0,
+      fernLoan: 0,
+      fernOffset: 0,
+      week: -1,
+    };
+
+    let bMilestoneFernOffset = {
+      fhLoan: 0,
+      fhOffset: 0,
+      fernLoan: 0,
+      fernOffset: 0,
+      week: -1,
+    };
+
+    const rWeeklyFHSim = rWeekly;
+    const rWeeklyFernSim = 0.0595 / 52;
+
+    for (let w = 0; w <= 30 * 52; w++) {
+      const bTotalDebt = bSimLoanFH + bSimLoanFern;
+      const bTotalOffsets = bSimOffsetFH + bSimOffsetFern + bSimExtraCashSavings;
+      if (w >= w_build && bTotalDebt > 0 && bTotalOffsets >= bTotalDebt * 0.5 && baselineHalfOffsetWeek === -1) {
+        baselineHalfOffsetWeek = w;
+      }
+      const isBaselineFullyOffset = bTotalOffsets >= bTotalDebt || bTotalDebt <= 0;
+      if (isBaselineFullyOffset && baselineFullyOffsetWeek === -1) {
+        baselineFullyOffsetWeek = w;
+      }
+
+      if (bSimOffsetFH >= bSimLoanFH && baselineFhNeutralizedWeek === -1) {
+        baselineFhNeutralizedWeek = w;
+        bMilestoneFHOffset = {
+          fhLoan: Math.round(bSimLoanFH),
+          fhOffset: Math.round(bSimOffsetFH),
+          fernLoan: Math.round(bSimLoanFern),
+          fernOffset: Math.round(bSimOffsetFern),
+          week: w,
+        };
+      }
+      if (
+        bSimOffsetFH >= bSimLoanFH &&
+        bSimOffsetFern >= bSimLoanFern &&
+        baselineBothNeutralizedWeek === -1
+      ) {
+        baselineBothNeutralizedWeek = w;
+        bMilestoneFernOffset = {
+          fhLoan: Math.round(bSimLoanFH),
+          fhOffset: Math.round(bSimOffsetFH),
+          fernLoan: Math.round(bSimLoanFern),
+          fernOffset: Math.round(bSimOffsetFern),
+          week: w,
+        };
+      }
+
+      const fhInterest = Math.max(0, bSimLoanFH - bSimOffsetFH) * rWeeklyFHSim;
+      const fernInterest = Math.max(0, bSimLoanFern - bSimOffsetFern) * rWeeklyFernSim;
+
+      const fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
+      bSimLoanFH = Math.max(0, bSimLoanFH - fhPrincipalReduction);
+
+      const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
+      bSimLoanFern = Math.max(0, bSimLoanFern - fernPrincipalReduction);
+
+      let remainingSavings = inputs.weeklySavings;
+
+      // Clamping of baseline offsets due to decreasing loan principal
+      let bExcessFromClamping = 0;
+      if (bSimOffsetFH > bSimLoanFH) {
+        bExcessFromClamping += (bSimOffsetFH - bSimLoanFH);
+        bSimOffsetFH = bSimLoanFH;
+      }
+      if (bSimOffsetFern > bSimLoanFern) {
+        bExcessFromClamping += (bSimOffsetFern - bSimLoanFern);
+        bSimOffsetFern = bSimLoanFern;
+      }
+
+      let bCashPool = remainingSavings + bExcessFromClamping;
+
+      // Deposit order: 1. FH Offset, 2. Fern Offset, 3. Extra Cash Savings
+      if (bCashPool > 0 && bSimOffsetFH < bSimLoanFH) {
+        const space = bSimLoanFH - bSimOffsetFH;
+        const deposit = Math.min(bCashPool, space);
+        bSimOffsetFH += deposit;
+        bCashPool -= deposit;
+      }
+
+      if (bCashPool > 0 && bSimOffsetFern < bSimLoanFern) {
+        const space = bSimLoanFern - bSimOffsetFern;
+        const deposit = Math.min(bCashPool, space);
+        bSimOffsetFern += deposit;
+        bCashPool -= deposit;
+      }
+
+      if (bCashPool > 0) {
+        bSimExtraCashSavings += bCashPool;
+        bCashPool = 0;
+      }
+
+      if (w % 13 === 0 || w === 30 * 52) {
+        baselineSimulationData.push({
+          week: w,
+          year: (w / 52).toFixed(1),
+          loanFH: Math.round(bSimLoanFH),
+          offsetFH: Math.round(bSimOffsetFH),
+          loanFern: Math.round(bSimLoanFern),
+          offsetFern: Math.round(bSimOffsetFern),
+          extraCashSavings: Math.round(bSimExtraCashSavings),
+          netDebt: Math.round(
+            (bSimLoanFH - bSimOffsetFH) + (bSimLoanFern - bSimOffsetFern) - bSimExtraCashSavings
+          ),
+        });
+      }
+    }
+
+    if (baselineFhNeutralizedWeek === -1) {
+      bMilestoneFHOffset = {
+        fhLoan: Math.round(bSimLoanFH),
+        fhOffset: Math.round(bSimOffsetFH),
+        fernLoan: Math.round(bSimLoanFern),
+        fernOffset: Math.round(bSimOffsetFern),
+        week: 30 * 52,
+      };
+    }
+    if (baselineBothNeutralizedWeek === -1) {
+      bMilestoneFernOffset = {
+        fhLoan: Math.round(bSimLoanFH),
+        fhOffset: Math.round(bSimOffsetFH),
+        fernLoan: Math.round(bSimLoanFern),
+        fernOffset: Math.round(bSimOffsetFern),
+        week: 30 * 52,
+      };
+    }
+
+    // PART B: Run Active Portfolio Simulation (including future expenses and other incomes)
     const simulationData: SimulationDataPoint[] = [];
     let simLoanFH = recastForeverHomeLoanPrincipal;
-    
-    // Move Fern St offset money into the Forever Home offset account as requested (cleanly without double-counting)
-    let simOffsetFH = recastOffsetBalance; // Consolidated offset balance after recast split
+    let simOffsetFH = recastOffsetBalance;
     let simLoanFern = ACCOUNT_BALANCES.fernLoan;
-    let simOffsetFern = 0; // Starts at $0 as it has been moved into Forever Home offset account
+    let simOffsetFern = 0;
+    let simExtraCashSavings = 0;
 
     let fhNeutralizedWeek = -1;
     let bothNeutralizedWeek = -1;
+    let fernNeutralizedWeek = -1;
+    let nbFullyOffsetWeek = -1;
 
-    // Initialize interest tracking variables
+    let fhPaidOffWeek = -1;
+    let fernPaidOffWeek = -1;
+    let nbPaidOffWeek = -1;
+
+    let fhTotalInterestPaidSim = 0;
+    let fernTotalInterestPaidSim = 0;
+    let nbTotalInterestPaidSim = 0;
+
     let fhInterestAtOffset = 0;
     let fhInterestAtBothOffset = 0;
     let fernInterestAtBothOffset = 0;
 
-    // Initialize milestone tracking for row of 3 boards under graph
     let milestoneRecast = {
       fhLoan: Math.round(simLoanFH),
       fhOffset: Math.round(simOffsetFH),
@@ -876,10 +1165,140 @@ export default function App() {
       week: -1,
     };
 
-    const rWeeklyFHSim = rWeekly;
-    const rWeeklyFernSim = 0.0595 / 52;
+    // Track active new loans created during simulation with offset attachment
+    let activeNewLoans: { id: string; amount: number; principal: number; weeklyPayment: number; weekStarted: number; offset: number }[] = [];
+    let activeNewLoansInterestPaid = 0;
+
+    // Track New Build Loan created during simulation
+    let simLoanNewBuild = 0;
+    let simOffsetNewBuild = 0;
+    let newBuildWeeklyPayment = 0;
+    let newBuildInterestPaid = 0;
+    // w_build is defined above at the start of Part A
+
+    let liquidOffsetAtBuildVal = 0;
+    let actualDrawFromOffsetsVal = 0;
+    let newBuildLoanAmountVal = 0;
+
+    let activeHalfOffsetWeek = -1;
+    let activeFullyOffsetWeek = -1;
 
     for (let w = 0; w <= 30 * 52; w++) {
+      // 1. Process future drawdowns/expenses starting this week
+      futureExpenses.forEach((exp) => {
+        const triggerWeek = Math.round(exp.timingYears * 52);
+        if (w === triggerWeek) {
+          if (exp.source === "offset_fh") {
+            simOffsetFH = Math.max(0, simOffsetFH - exp.amount);
+          } else if (exp.source === "offset_fern") {
+            simOffsetFern = Math.max(0, simOffsetFern - exp.amount);
+          } else if (exp.source === "new_loan") {
+            // New loan P&I over standard 30-year term
+            const rLoanWeekly = rWeeklyFHSim;
+            const nLoanWeeks = 30 * 52;
+            const pmt = rLoanWeekly > 0 
+              ? (exp.amount * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+              : 0;
+            
+            activeNewLoans.push({
+              id: exp.id,
+              amount: exp.amount,
+              principal: exp.amount,
+              weeklyPayment: pmt,
+              weekStarted: w,
+              offset: 0,
+            });
+          }
+        }
+      });
+
+      // Process New Build spending drawdown event at exact week
+      if (w === w_build) {
+        liquidOffsetAtBuildVal = simOffsetFH + simOffsetFern + simExtraCashSavings;
+        const availableOffsets = Math.max(0, liquidOffsetAtBuildVal - newBuildBuffer);
+        const preferredDraw = availableOffsets * (newBuildDrawChoicePct / 100);
+        actualDrawFromOffsetsVal = Math.min(newBuildSpend, preferredDraw);
+        newBuildLoanAmountVal = Math.max(0, newBuildSpend - actualDrawFromOffsetsVal);
+
+        // Deduct actualDrawFromOffsetsVal from our offset reserves / savings
+        let pullRemaining = actualDrawFromOffsetsVal;
+        if (pullRemaining > 0) {
+          // First draw from the extra cash savings!
+          const pullExtra = Math.min(simExtraCashSavings, pullRemaining);
+          simExtraCashSavings -= pullExtra;
+          pullRemaining -= pullExtra;
+
+          // If still remaining, draw from actual offset accounts based on toggle
+          if (pullRemaining > 0) {
+            if (inputs.depletionPriorityToggle === "paulan") {
+              const pullFH = Math.min(simOffsetFH, pullRemaining);
+              simOffsetFH -= pullFH;
+              pullRemaining -= pullFH;
+              if (pullRemaining > 0) {
+                const pullFern = Math.min(simOffsetFern, pullRemaining);
+                simOffsetFern -= pullFern;
+                pullRemaining -= pullFern;
+              }
+            } else {
+              const pullFern = Math.min(simOffsetFern, pullRemaining);
+              simOffsetFern -= pullFern;
+              pullRemaining -= pullFern;
+              if (pullRemaining > 0) {
+                const pullFH = Math.min(simOffsetFH, pullRemaining);
+                simOffsetFH -= pullFH;
+                pullRemaining -= pullFH;
+              }
+            }
+          }
+        }
+
+        if (newBuildLoanAmountVal > 0) {
+          simLoanNewBuild = newBuildLoanAmountVal;
+          const rLoanWeekly = rWeeklyFHSim;
+          const nLoanWeeks = 30 * 52;
+          newBuildWeeklyPayment = rLoanWeekly > 0 
+            ? (newBuildLoanAmountVal * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+            : 0;
+
+          // Move remaining extra cash savings completely into the new build offset loan as a priority!
+          if (simExtraCashSavings > 0) {
+            const depositToNB = Math.min(simExtraCashSavings, simLoanNewBuild - simOffsetNewBuild);
+            simOffsetNewBuild += depositToNB;
+            simExtraCashSavings -= depositToNB;
+          }
+        }
+      }
+
+      // 2. Process extra incomes in this week with 15% tax haircut applied
+      let extraWeeklyIncomeInThisWeek = 0;
+      futureIncomes.forEach((inc) => {
+        const startWeek = Math.round(inc.timingStartYears * 52);
+        const endWeek = inc.timingEndYears !== null ? Math.round(inc.timingEndYears * 52) : (30 * 52);
+        if (w >= startWeek && w <= endWeek) {
+          const weeklyAfterTax = (inc.annualAmount * 0.85) / 52;
+          extraWeeklyIncomeInThisWeek += weeklyAfterTax;
+        }
+      });
+
+      // 3. Update active simulation neutralization triggers
+      let currNewLoansPrincipal = 0;
+      let currNewLoansOffset = 0;
+      activeNewLoans.forEach((l) => {
+        currNewLoansPrincipal += l.principal;
+        currNewLoansOffset += l.offset;
+      });
+
+      const activeTotalDebt = simLoanFH + simLoanFern + currNewLoansPrincipal + simLoanNewBuild;
+      const activeTotalOffsets = simOffsetFH + simOffsetFern + currNewLoansOffset + simOffsetNewBuild + simExtraCashSavings;
+
+      if (w >= w_build && activeTotalDebt > 0 && activeTotalOffsets >= activeTotalDebt * 0.5 && activeHalfOffsetWeek === -1) {
+        activeHalfOffsetWeek = w;
+      }
+      const isActiveFullyOffset = activeTotalOffsets >= activeTotalDebt || activeTotalDebt <= 0;
+      if (isActiveFullyOffset && activeFullyOffsetWeek === -1) {
+        activeFullyOffsetWeek = w;
+      }
+
       if (simOffsetFH >= simLoanFH && fhNeutralizedWeek === -1) {
         fhNeutralizedWeek = w;
         milestoneFHOffset = {
@@ -917,45 +1336,204 @@ export default function App() {
         fernInterestAtBothOffset += fernInterest;
       }
 
+      if (simOffsetFern >= simLoanFern && fernNeutralizedWeek === -1) {
+        fernNeutralizedWeek = w;
+      }
+
+      if (simLoanFH > 0) {
+        fhTotalInterestPaidSim += fhInterest;
+      }
+      if (simLoanFern > 0) {
+        fernTotalInterestPaidSim += fernInterest;
+      }
+
       const fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
+      if (simLoanFH > 0 && simLoanFH - fhPrincipalReduction <= 0 && fhPaidOffWeek === -1) {
+        fhPaidOffWeek = w;
+      }
       simLoanFH = Math.max(0, simLoanFH - fhPrincipalReduction);
 
       const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
+      if (simLoanFern > 0 && simLoanFern - fernPrincipalReduction <= 0 && fernPaidOffWeek === -1) {
+        fernPaidOffWeek = w;
+      }
       simLoanFern = Math.max(0, simLoanFern - fernPrincipalReduction);
 
-      let remainingSavings = inputs.weeklySavings;
-
-      // 1. Fill Forever Home offset account first using weekly savings
-      if (simOffsetFH < simLoanFH) {
-        const space = simLoanFH - simOffsetFH;
-        const deposit = Math.min(remainingSavings, space);
-        simOffsetFH += deposit;
-        remainingSavings -= deposit;
+      // 4. Model the New Build Loan performance
+      if (simLoanNewBuild > 0 && w >= w_build) {
+        const nbInterest = Math.max(0, simLoanNewBuild - simOffsetNewBuild) * rWeeklyFHSim;
+        newBuildInterestPaid += nbInterest;
+        nbTotalInterestPaidSim += nbInterest;
+        const nbPrincipalPaid = Math.max(0, newBuildWeeklyPayment - nbInterest);
+        if (simLoanNewBuild - nbPrincipalPaid <= 0 && nbPaidOffWeek === -1) {
+          nbPaidOffWeek = w;
+        }
+        if (simOffsetNewBuild >= simLoanNewBuild && nbFullyOffsetWeek === -1) {
+          nbFullyOffsetWeek = w;
+        }
+        simLoanNewBuild = Math.max(0, simLoanNewBuild - nbPrincipalPaid);
       }
 
-      // 2. If Forever Home is fully offset, any leftover weekly savings from this week goes to Fern offset
-      if (remainingSavings > 0) {
-        if (simOffsetFern < simLoanFern) {
-          const space = simLoanFern - simOffsetFern;
-          simOffsetFern += Math.min(remainingSavings, space);
-        } else {
-          simOffsetFern = simLoanFern;
+      // Track savings surplus or repayment deficit
+      let remainingSavings = inputs.weeklySavings + extraWeeklyIncomeInThisWeek;
+
+      // Pay off new loans weekly repayments
+      let totalNewLoansRepayment = 0;
+      let totalNewLoansPrincipal = 0;
+      let totalNewLoansOffset = 0;
+
+      activeNewLoans.forEach((loan) => {
+        if (loan.principal > 0) {
+          // Interest is calculated on principal minus offset
+          const lInterest = Math.max(0, loan.principal - loan.offset) * rWeeklyFHSim;
+          activeNewLoansInterestPaid += lInterest;
+          const lPrincipalPaid = Math.max(0, loan.weeklyPayment - lInterest);
+          loan.principal = Math.max(0, loan.principal - lPrincipalPaid);
+          totalNewLoansRepayment += loan.weeklyPayment;
+          totalNewLoansPrincipal += loan.principal;
+          totalNewLoansOffset += loan.offset;
+        }
+      });
+
+      remainingSavings -= totalNewLoansRepayment;
+
+      if (w >= w_build && simLoanNewBuild > 0) {
+        remainingSavings -= newBuildWeeklyPayment;
+      }
+
+      // Deficit handling inside active simulation: pull from extra cash savings first, then offset accounts to cover the loan costs
+      if (remainingSavings < 0) {
+        let savingsDeficit = -remainingSavings;
+        remainingSavings = 0;
+
+        if (simExtraCashSavings > 0) {
+          const pullExtra = Math.min(simExtraCashSavings, savingsDeficit);
+          simExtraCashSavings -= pullExtra;
+          savingsDeficit -= pullExtra;
+        }
+
+        if (savingsDeficit > 0) {
+          if (inputs.depletionPriorityToggle === "paulan") {
+            const pullFH = Math.min(simOffsetFH, savingsDeficit);
+            simOffsetFH -= pullFH;
+            savingsDeficit -= pullFH;
+            if (savingsDeficit > 0) {
+              const pullFern = Math.min(simOffsetFern, savingsDeficit);
+              simOffsetFern -= pullFern;
+              savingsDeficit -= pullFern;
+            }
+            if (savingsDeficit > 0) {
+              for (let i = 0; i < activeNewLoans.length; i++) {
+                const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
+                activeNewLoans[i].offset -= pullN;
+                savingsDeficit -= pullN;
+                if (savingsDeficit <= 0) break;
+              }
+            }
+            if (savingsDeficit > 0 && simOffsetNewBuild > 0) {
+              const pullNB = Math.min(simOffsetNewBuild, savingsDeficit);
+              simOffsetNewBuild -= pullNB;
+              savingsDeficit -= pullNB;
+            }
+          } else {
+            const pullFern = Math.min(simOffsetFern, savingsDeficit);
+            simOffsetFern -= pullFern;
+            savingsDeficit -= pullFern;
+            if (savingsDeficit > 0) {
+              const pullFH = Math.min(simOffsetFH, savingsDeficit);
+              simOffsetFH -= pullFH;
+              savingsDeficit -= pullFH;
+            }
+            if (savingsDeficit > 0) {
+              for (let i = 0; i < activeNewLoans.length; i++) {
+                const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
+                activeNewLoans[i].offset -= pullN;
+                savingsDeficit -= pullN;
+                if (savingsDeficit <= 0) break;
+              }
+            }
+            if (savingsDeficit > 0 && simOffsetNewBuild > 0) {
+              const pullNB = Math.min(simOffsetNewBuild, savingsDeficit);
+              simOffsetNewBuild -= pullNB;
+              savingsDeficit -= pullNB;
+            }
+          }
         }
       }
 
-      // 3. Since interest is $0, the bank takes recastWeeklyPayment, which reduces simLoanFH.
-      // That means simOffsetFH now exceeds simLoanFH. Or it might have exceeded it from Day 1!
-      // We sweep any excess cash beyond the loan balance to the Fern St offset!
+      // Clamping: offsets cannot exceed the newly reduced principal
+      let excessFromClamping = 0;
       if (simOffsetFH > simLoanFH) {
-        const excessCash = simOffsetFH - simLoanFH;
-        simOffsetFH = simLoanFH; // cap FH offset at the loan balance
-        if (simOffsetFern < simLoanFern) {
-          const space = simLoanFern - simOffsetFern;
-          simOffsetFern += Math.min(excessCash, space);
-        } else {
-          simOffsetFern = simLoanFern;
+        excessFromClamping += (simOffsetFH - simLoanFH);
+        simOffsetFH = simLoanFH;
+      }
+      if (simOffsetFern > simLoanFern) {
+        excessFromClamping += (simOffsetFern - simLoanFern);
+        simOffsetFern = simLoanFern;
+      }
+      activeNewLoans.forEach((loan) => {
+        if (loan.offset > loan.principal) {
+          excessFromClamping += (loan.offset - loan.principal);
+          loan.offset = loan.principal;
+        }
+      });
+      if (simOffsetNewBuild > simLoanNewBuild) {
+        excessFromClamping += (simOffsetNewBuild - simLoanNewBuild);
+        simOffsetNewBuild = simLoanNewBuild;
+      }
+
+      // Total available cash pool to allocate to offsets this week
+      let cashPool = remainingSavings + excessFromClamping;
+
+      // 1. Allocate to FH offset
+      if (cashPool > 0 && simOffsetFH < simLoanFH) {
+        const space = simLoanFH - simOffsetFH;
+        const deposit = Math.min(cashPool, space);
+        simOffsetFH += deposit;
+        cashPool -= deposit;
+      }
+
+      // 2. Allocate to New Build offset (if it exists)
+      if (cashPool > 0 && w >= w_build && simLoanNewBuild > 0 && simOffsetNewBuild < simLoanNewBuild) {
+        const space = simLoanNewBuild - simOffsetNewBuild;
+        const deposit = Math.min(cashPool, space);
+        simOffsetNewBuild += deposit;
+        cashPool -= deposit;
+      }
+
+      // 3. Allocate to Fern offset
+      if (cashPool > 0 && simOffsetFern < simLoanFern) {
+        const space = simLoanFern - simOffsetFern;
+        const deposit = Math.min(cashPool, space);
+        simOffsetFern += deposit;
+        cashPool -= deposit;
+      }
+
+      // 4. Allocate to active new loan offsets
+      if (cashPool > 0) {
+        for (let i = 0; i < activeNewLoans.length; i++) {
+          const loan = activeNewLoans[i];
+          if (loan.principal > 0 && loan.offset < loan.principal) {
+            const space = loan.principal - loan.offset;
+            const deposit = Math.min(cashPool, space);
+            loan.offset += deposit;
+            cashPool -= deposit;
+          }
+          if (cashPool <= 0) break;
         }
       }
+
+      // 5. Finally, put the overflow into Extra Cash Savings
+      if (cashPool > 0) {
+        simExtraCashSavings += cashPool;
+        cashPool = 0;
+      }
+
+      // Keep totals up-to-date for records after offset changes
+      totalNewLoansOffset = 0;
+      activeNewLoans.forEach((l) => {
+        totalNewLoansOffset += l.offset;
+      });
 
       if (w % 13 === 0 || w === 30 * 52) {
         simulationData.push({
@@ -965,14 +1543,22 @@ export default function App() {
           offsetFH: Math.round(simOffsetFH),
           loanFern: Math.round(simLoanFern),
           offsetFern: Math.round(simOffsetFern),
+          newLoansPayable: Math.round(totalNewLoansPrincipal),
+          newLoansOffset: Math.round(totalNewLoansOffset),
+          newBuildLoan: Math.round(simLoanNewBuild),
+          newBuildOffset: Math.round(simOffsetNewBuild),
+          extraCashSavings: Math.round(simExtraCashSavings),
           netDebt: Math.round(
-            simLoanFH - simOffsetFH + (simLoanFern - simOffsetFern)
+            (simLoanFH - simOffsetFH) + 
+            (simLoanFern - simOffsetFern) + 
+            (totalNewLoansPrincipal - totalNewLoansOffset) +
+            (simLoanNewBuild - simOffsetNewBuild) -
+            simExtraCashSavings
           ),
         });
       }
     }
 
-    // Set fallback if offset conditions are not fully met within 30 years
     if (fhNeutralizedWeek === -1) {
       milestoneFHOffset = {
         fhLoan: Math.round(simLoanFH),
@@ -1293,7 +1879,24 @@ export default function App() {
         bothNeutralizedWeek !== -1
           ? (bothNeutralizedWeek / 52).toFixed(1)
           : "30+",
+      baselineHalfOffsetYears:
+        baselineHalfOffsetWeek !== -1 ? (baselineHalfOffsetWeek / 52).toFixed(1) : "30+",
+      activeHalfOffsetYears:
+        activeHalfOffsetWeek !== -1 ? (activeHalfOffsetWeek / 52).toFixed(1) : "30+",
+      baselineFullyOffsetYears:
+        baselineFullyOffsetWeek !== -1 ? (baselineFullyOffsetWeek / 52).toFixed(1) : "30+",
+      activeFullyOffsetYears:
+        activeFullyOffsetWeek !== -1 ? (activeFullyOffsetWeek / 52).toFixed(1) : "30+",
+      activeFullyOffsetWeek,
       simulationData,
+      baselineSimulationData,
+      baselineFhNeutralizedWeek,
+      baselineBothNeutralizedWeek,
+      baselineFhOffsetYears:
+        baselineFhNeutralizedWeek !== -1 ? (baselineFhNeutralizedWeek / 52).toFixed(1) : "30+",
+      baselineBothOffsetYears:
+        baselineBothNeutralizedWeek !== -1 ? (baselineBothNeutralizedWeek / 52).toFixed(1) : "30+",
+      activeNewLoansInterestPaid,
       transitionWeeksData,
       cumulativeTransitionInterest,
       maxWeeklyRepaymentInTransition,
@@ -1301,8 +1904,21 @@ export default function App() {
       transitionMerylWeeks,
       transitionDoubleMortgageWeeks,
       sensitivityMatrix,
+      liquidOffsetAtBuild: liquidOffsetAtBuildVal,
+      actualDrawFromOffsets: actualDrawFromOffsetsVal,
+      newBuildLoanAmount: newBuildLoanAmountVal,
+      newBuildWeeklyPayment,
+      newBuildInterestPaid,
+      fernNeutralizedWeek,
+      nbFullyOffsetWeek,
+      fhPaidOffWeek,
+      fernPaidOffWeek,
+      nbPaidOffWeek,
+      fhTotalInterestPaidSim,
+      fernTotalInterestPaidSim,
+      nbTotalInterestPaidSim,
     };
-  }, [inputs, timeline]);
+  }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct]);
 
   const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
@@ -2295,6 +2911,17 @@ export default function App() {
               >
                 <Icons.Home className="w-4 h-4" />
                 Property Research
+              </button>
+              <button
+                onClick={() => setActiveTab("futureExpenses")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "futureExpenses"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <Icons.Calendar className="w-4 h-4" />
+                Future Expenses
               </button>
             </div>
 
@@ -6098,6 +6725,19 @@ export default function App() {
                   </button>
                 </div>
 
+                <div className="flex items-center gap-2 mt-2 select-none no-print">
+                  <input
+                    type="checkbox"
+                    id="toggle-live-grounding"
+                    checked={useSearch}
+                    onChange={(e) => setUseSearch(e.target.checked)}
+                    className="rounded border-stone-300 text-blue-900 focus:ring-blue-900 h-3.5 w-3.5 cursor-pointer accent-blue-900"
+                  />
+                  <label htmlFor="toggle-live-grounding" className="text-xs font-serif text-stone-600 font-medium cursor-pointer flex items-center gap-1.5">
+                    <span>🌐</span> Use Live Web Search Grounding <span className="text-[10px] text-stone-400 font-normal font-sans">(Uses Google Search to crawl active live listings; prone to rate-limits on standard keys)</span>
+                  </label>
+                </div>
+
                 {researchError && (
                   <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg text-xs space-y-1">
                     <p className="font-bold font-serif text-[11px]">Report Generation Error</p>
@@ -6191,24 +6831,7 @@ export default function App() {
                       </ul>
                     </div>
 
-                    {/* Commuting and Transit */}
-                    <div className="pt-6">
-                      <h5 className="font-semibold text-sm text-blue-900 font-serif mb-3">
-                        Estimated Travel and Commute Times
-                      </h5>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        {researchReport.travelTimes.map((tt, idx) => (
-                          <div key={idx} className="bg-stone-50 border border-stone-100 p-3 rounded-lg text-center">
-                            <span className="text-[10px] uppercase font-bold text-stone-400 block mb-1 font-serif">
-                              {tt.destination}
-                            </span>
-                            <span className="text-xs font-bold text-blue-950 font-sans">
-                              {tt.duration}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+
 
                     {/* Grounding Source Attribution */}
                     {researchSources.length > 0 && (
@@ -6231,6 +6854,1142 @@ export default function App() {
                     )}
                   </div>
                 )}
+              </section>
+            </div>
+
+            <div className={`space-y-6 ${activeTab === "futureExpenses" ? "block" : "hidden print:hidden"}`}>
+              {/* Elegant Header section */}
+              <section className="bg-gradient-to-br from-blue-950 via-slate-900 to-indigo-950 text-white p-6 sm:p-8 rounded-xl shadow-md border-b border-white/[0.08] relative overflow-hidden">
+                <div className="relative z-10 space-y-2 font-serif">
+                  <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-widest font-mono">
+                    <Icons.Calendar className="w-4 h-4 text-indigo-400" />
+                    <span>Portfolios & Capital Allocation Simulation</span>
+                  </div>
+                  <h3 className="text-2xl sm:text-3xl font-bold font-serif tracking-tight text-white">
+                    Future Portfolio Planning & Expenses
+                  </h3>
+                  <p className="text-stone-300 text-xs sm:text-sm font-serif max-w-3xl leading-relaxed">
+                    Model large cash outlays (for cars, construction, or land improvements) alongside cattle agistment or supplementary income streams. Test alternative drawdown strategies dynamically to secure long-term portfolio freedom.
+                  </p>
+                </div>
+              </section>
+
+              {/* Top Section: Expense Creator & Other Income Creator */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Card A: Create Future Expense */}
+                <div className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm">
+                  <div className="flex items-center gap-2 pb-3 border-b border-stone-100">
+                    <div className="p-2 bg-rose-50 text-rose-800 rounded-lg">
+                      <Icons.Dollar className="w-5 h-5 text-rose-800" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-stone-900 font-serif">Add Large Future Expense</h4>
+                      <p className="text-[10px] text-stone-500 font-serif">Model cash purchases or new construction loan draws</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 text-xs font-serif">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="font-semibold text-stone-700">Expense Label / Description:</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Purchase Landcruiser"
+                          id="exp-label"
+                          className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-stone-50/50 hover:border-stone-300 focus:outline-none focus:border-blue-900 font-sans"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-semibold text-stone-700">Amount ($):</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 100000"
+                          id="exp-amount"
+                          className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-stone-50/50 hover:border-stone-300 focus:outline-none focus:border-blue-900 font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="font-semibold text-stone-700">Funding Source:</label>
+                        <select
+                          id="exp-source"
+                          className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-stone-50/50 hover:border-stone-300 focus:outline-none focus:border-blue-900 font-sans text-xs"
+                        >
+                          <option value="offset_fh">Forever Home Offset Account</option>
+                          <option value="offset_fern">Fern St Offset Account</option>
+                          <option value="new_loan">Brand New Loan (Construction, etc.)</option>
+                        </select>
+                        <span className="text-[9px] text-stone-400 block pt-0.5 leading-snug">
+                          New loans default to {inputs.interestRate}% interest rate with standard terms.
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <label className="font-semibold text-stone-700">Timing Slider:</label>
+                          <span className="font-mono text-blue-900 font-bold" id="exp-timing-display">
+                            Year 1.0 (Month 12)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="0.08333" // 1/12th of a year (exactly one month)
+                          defaultValue="1.0"
+                          id="exp-timing-range"
+                          onChange={(e) => {
+                            const yearVal = parseFloat(e.target.value);
+                            const monthsTotal = Math.round(yearVal * 12);
+                            const displayYears = Math.floor(monthsTotal / 12);
+                            const displayMonths = monthsTotal % 12;
+                            const disp = document.getElementById("exp-timing-display");
+                            if (disp) {
+                              disp.textContent = `Year ${displayYears}.${displayMonths} (${monthsTotal} mth${monthsTotal === 1 ? '' : 's'})`;
+                            }
+                          }}
+                          className="w-full accent-blue-900 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[8px] text-stone-400 font-mono">
+                          <span>Day 1 (0m)</span>
+                          <span>Year 15 (180m)</span>
+                          <span>Year 30 (360m)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const labelInput = document.getElementById("exp-label") as HTMLInputElement;
+                        const amountInput = document.getElementById("exp-amount") as HTMLInputElement;
+                        const sourceSelect = document.getElementById("exp-source") as HTMLSelectElement;
+                        const timingSlider = document.getElementById("exp-timing-range") as HTMLInputElement;
+
+                        if (!labelInput || !amountInput || !sourceSelect || !timingSlider) return;
+
+                        const label = labelInput.value.trim() || "Unlabelled Expense";
+                        const amount = parseFloat(amountInput.value) || 0;
+                        const source = sourceSelect.value as any;
+                        const timingYears = parseFloat(timingSlider.value) || 0;
+
+                        if (amount <= 0) {
+                          alert("Please enter a valid expense amount.");
+                          return;
+                        }
+
+                        const newExp: FutureExpense = {
+                          id: "exp_" + Date.now().toString(),
+                          name: label,
+                          amount,
+                          timingYears,
+                          source,
+                        };
+
+                        setFutureExpenses((prev) => [...prev, newExp]);
+
+                        // Reset
+                        labelInput.value = "";
+                        amountInput.value = "";
+                        sourceSelect.value = "offset_fh";
+                        timingSlider.value = "1.0";
+                        const disp = document.getElementById("exp-timing-display");
+                        if (disp) disp.textContent = "Year 1.0 (Month 12)";
+                      }}
+                      className="w-full bg-slate-900 hover:bg-slate-950 text-white font-serif font-bold text-xs py-2 rounded-lg cursor-pointer transition-all shadow-sm"
+                    >
+                      Add Expense Drawdown
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card B: Create Future Other Income Stream */}
+                <div className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm">
+                  <div className="flex items-center gap-2 pb-3 border-b border-stone-100">
+                    <div className="p-2 bg-emerald-50 text-emerald-800 rounded-lg">
+                      <Icons.Farm className="w-5 h-5 text-emerald-700" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-stone-900 font-serif">Add Other Income Stream</h4>
+                      <p className="text-[10px] text-stone-500 font-serif">Model extra revenue streams with a 15% tax haircut</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 text-xs font-serif">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="font-semibold text-stone-700">Income Stream Name / Label:</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Agistment Cattle"
+                          id="inc-label"
+                          className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-stone-50/50 hover:border-stone-300 focus:outline-none focus:border-blue-900 font-sans"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="font-semibold text-stone-700">Annual Return ($ p.a.):</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 30000"
+                          id="inc-amount"
+                          className="w-full px-3 py-2 border border-stone-200 rounded-lg bg-stone-50/50 hover:border-stone-300 focus:outline-none focus:border-blue-900 font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <label className="font-semibold text-stone-700">Starts At Timing:</label>
+                          <span className="font-mono text-emerald-800 font-bold" id="inc-start-display">
+                            Year 1.0 (Month 12)
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="30"
+                          step="0.08333"
+                          defaultValue="1.0"
+                          id="inc-start-range"
+                          onChange={(e) => {
+                            const yearVal = parseFloat(e.target.value);
+                            const monthsTotal = Math.round(yearVal * 12);
+                            const displayYears = Math.floor(monthsTotal / 12);
+                            const displayMonths = monthsTotal % 12;
+                            const disp = document.getElementById("inc-start-display");
+                            if (disp) {
+                              disp.textContent = `Year ${displayYears}.${displayMonths} (${monthsTotal} mth${monthsTotal === 1 ? '' : 's'})`;
+                            }
+                          }}
+                          className="w-full accent-emerald-700 cursor-pointer"
+                        />
+                        <div className="flex justify-between text-[8px] text-stone-400 font-mono">
+                          <span>Day 1 (0m)</span>
+                          <span>Year 15 (180m)</span>
+                          <span>Year 30 (360m)</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="font-semibold text-stone-700 flex items-center gap-1.5 select-none">
+                            <input
+                              type="checkbox"
+                              defaultChecked
+                              id="inc-indefinite-chk"
+                              onChange={(e) => {
+                                const block = document.getElementById("inc-end-container");
+                                if (block) {
+                                  block.style.opacity = e.target.checked ? "0.4" : "1.0";
+                                  block.style.pointerEvents = e.target.checked ? "none" : "auto";
+                                }
+                              }}
+                              className="rounded border-stone-300 text-emerald-700 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            Run Indefinitely
+                          </label>
+                          <span className="font-mono text-stone-500 font-semibold text-[10px]" id="inc-end-display">
+                            Until Year 30
+                          </span>
+                        </div>
+                        <div id="inc-end-container" style={{ opacity: "0.4", pointerEvents: "none" }} className="transition-all">
+                          <input
+                            type="range"
+                            min="0"
+                            max="30"
+                            step="0.08333"
+                            defaultValue="30.0"
+                            id="inc-end-range"
+                            onChange={(e) => {
+                              const yearVal = parseFloat(e.target.value);
+                              const monthsTotal = Math.round(yearVal * 12);
+                              const displayYears = Math.floor(monthsTotal / 12);
+                              const displayMonths = monthsTotal % 12;
+                              const disp = document.getElementById("inc-end-display");
+                              if (disp) {
+                                disp.textContent = `Until Year ${displayYears}.${displayMonths} (${monthsTotal}m)`;
+                              }
+                            }}
+                            className="w-full accent-emerald-700 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        const labelInput = document.getElementById("inc-label") as HTMLInputElement;
+                        const amountInput = document.getElementById("inc-amount") as HTMLInputElement;
+                        const startSlider = document.getElementById("inc-start-range") as HTMLInputElement;
+                        const endSlider = document.getElementById("inc-end-range") as HTMLInputElement;
+                        const indefiniteChk = document.getElementById("inc-indefinite-chk") as HTMLInputElement;
+
+                        if (!labelInput || !amountInput || !startSlider || !endSlider || !indefiniteChk) return;
+
+                        const label = labelInput.value.trim() || "Other Income";
+                        const annualAmount = parseFloat(amountInput.value) || 0;
+                        const timingStartYears = parseFloat(startSlider.value) || 0;
+                        const isIndefinite = indefiniteChk.checked;
+                        const timingEndYears = isIndefinite ? null : parseFloat(endSlider.value);
+
+                        if (annualAmount <= 0) {
+                          alert("Please enter a valid annual income amount.");
+                          return;
+                        }
+
+                        if (!isIndefinite && timingEndYears !== null && timingEndYears <= timingStartYears) {
+                          alert("The income end date must be after the start date.");
+                          return;
+                        }
+
+                        const newInc: FutureIncome = {
+                          id: "inc_" + Date.now().toString(),
+                          name: label,
+                          annualAmount,
+                          timingStartYears,
+                          timingEndYears,
+                        };
+
+                        setFutureIncomes((prev) => [...prev, newInc]);
+
+                        // Reset
+                        labelInput.value = "";
+                        amountInput.value = "";
+                        startSlider.value = "1.0";
+                        endSlider.value = "30.0";
+                        indefiniteChk.checked = true;
+                        const dispStart = document.getElementById("inc-start-display");
+                        if (dispStart) dispStart.textContent = "Year 1.0 (Month 12)";
+                        const dispEnd = document.getElementById("inc-end-display");
+                        if (dispEnd) dispEnd.textContent = "Until Year 30";
+                        const block = document.getElementById("inc-end-container");
+                        if (block) {
+                          block.style.opacity = "0.4";
+                          block.style.pointerEvents = "none";
+                        }
+                      }}
+                      className="w-full bg-slate-900 hover:bg-slate-950 text-white font-serif font-bold text-xs py-2 rounded-lg cursor-pointer transition-all shadow-sm"
+                    >
+                      Add Custom Income Stream
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Active / Listed Elements Tables */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-2">
+                {/* Active Expenses */}
+                <div className="bg-white border border-stone-200 p-5 rounded-xl space-y-4 shadow-sm">
+                  <h4 className="font-bold text-sm text-stone-800 font-serif border-b border-stone-100 pb-2 flex items-center justify-between">
+                    <span>Active Future Expense Schedule ({futureExpenses.length})</span>
+                    <span className="text-[10px] text-stone-400 font-serif font-normal">Saves automatically</span>
+                  </h4>
+                  {futureExpenses.length === 0 ? (
+                    <div className="py-6 text-center text-stone-400 text-xs font-serif">
+                      No future expenses added yet. Create one above to model cash drawdowns!
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto text-[11px] sm:text-xs">
+                      <table className="w-full text-left font-serif text-stone-600 border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-200 text-[10px] uppercase text-stone-400 font-bold bg-stone-50/50">
+                            <th className="py-2 px-3">Description</th>
+                            <th className="py-2 px-3 text-right">Amount</th>
+                            <th className="py-2 px-3">Funding Source</th>
+                            <th className="py-2 px-3">Timing (Month)</th>
+                            <th className="py-2 px-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {futureExpenses.map((exp) => {
+                            const monthsTotal = Math.round(exp.timingYears * 12);
+                            const displayYears = Math.floor(monthsTotal / 12);
+                            const displayMonths = monthsTotal % 12;
+                            return (
+                              <tr key={exp.id} className="border-b border-stone-150 hover:bg-stone-50/50">
+                                <td className="py-2.5 px-3 font-semibold text-stone-800">{exp.name}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-rose-800 font-semibold">
+                                  ${exp.amount.toLocaleString()}
+                                </td>
+                                <td className="py-2.5 px-3 font-medium capitalize">
+                                  {exp.source === "offset_fh"
+                                    ? "FH Offset"
+                                    : exp.source === "offset_fern"
+                                    ? "Fern St Offset"
+                                    : "New Loan"}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono font-medium">
+                                  Yr {displayYears}.{displayMonths} ({monthsTotal}m)
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    onClick={() => setFutureExpenses((prev) => prev.filter((x) => x.id !== exp.id))}
+                                    className="text-stone-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition cursor-pointer font-bold text-[10px]"
+                                  >
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Incomes */}
+                <div className="bg-white border border-stone-200 p-5 rounded-xl space-y-4 shadow-sm">
+                  <h4 className="font-bold text-sm text-stone-800 font-serif border-b border-stone-100 pb-2 flex items-center justify-between">
+                    <span>Active Other Income Schedule ({futureIncomes.length})</span>
+                    <span className="text-[10px] text-stone-400 font-serif font-normal">15% haircut applied</span>
+                  </h4>
+                  {futureIncomes.length === 0 ? (
+                    <div className="py-6 text-center text-stone-400 text-xs font-serif">
+                      No other income streams added yet. Create one above to model cattle/agistment yield!
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto text-[11px] sm:text-xs">
+                      <table className="w-full text-left font-serif text-stone-600 border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-200 text-[10px] uppercase text-stone-400 font-bold bg-stone-50/50">
+                            <th className="py-2 px-3">Description</th>
+                            <th className="py-2 px-3 text-right">Annual Gross p.a.</th>
+                            <th className="py-2 px-3 text-right">Net Extra Weekly</th>
+                            <th className="py-2 px-3">Timing Window</th>
+                            <th className="py-2 px-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {futureIncomes.map((inc) => {
+                            const sMonths = Math.round(inc.timingStartYears * 12);
+                            const sY = Math.floor(sMonths / 12);
+                            const sM = sMonths % 12;
+
+                            const hasEnd = inc.timingEndYears !== null;
+                            const eMonths = hasEnd ? Math.round(inc.timingEndYears! * 12) : 0;
+                            const eY = hasEnd ? Math.floor(eMonths / 12) : 0;
+                            const eM = hasEnd ? eMonths % 12 : 0;
+
+                            const netWeekly = (inc.annualAmount * 0.85) / 52;
+                            return (
+                              <tr key={inc.id} className="border-b border-stone-150 hover:bg-stone-50/50">
+                                <td className="py-2.5 px-3 font-semibold text-stone-800">{inc.name}</td>
+                                <td className="py-2.5 px-3 text-right font-mono text-emerald-800 font-bold">
+                                  ${inc.annualAmount.toLocaleString()}
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono font-medium text-stone-600">
+                                  +${netWeekly.toFixed(2)}/wk
+                                </td>
+                                <td className="py-2.5 px-3 font-medium text-stone-500">
+                                  Yr {sY}.{sM} → {hasEnd ? `Yr ${eY}.${eM} (${eMonths}m)` : "Indefinite"}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    onClick={() => setFutureIncomes((prev) => prev.filter((x) => x.id !== inc.id))}
+                                    className="text-stone-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition cursor-pointer font-bold text-[10px]"
+                                  >
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* NEW BUILD SECTION */}
+              <div className="bg-white border border-stone-250 p-6 rounded-xl space-y-6 shadow-md border-t-4 border-t-purple-900">
+                <div className="flex items-start justify-between border-b border-stone-155 pb-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                       <span className="px-2 py-0.5 bg-purple-900 text-white font-mono text-[9px] font-extrabold rounded">MODELER</span>
+                       <h4 className="font-bold text-lg text-purple-950 font-serif leading-tight">New Build Capital Allocator</h4>
+                    </div>
+                    <p className="text-xs text-stone-500 font-serif">
+                       Configure when &amp; how you draw capital to construct the new build on site. Liquid offsets dynamically change based on the build timing!
+                    </p>
+                  </div>
+                  <Icons.Home className="w-5 h-5 text-purple-900 flex-shrink-0" />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs font-serif">
+                  {/* Left Column: Sliders */}
+                  <div className="space-y-5 bg-stone-50/50 p-4 rounded-xl border border-stone-150">
+                    {/* Slider 1: Total Spend */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="font-bold text-stone-800">Total Spend ($):</label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-stone-400 font-bold">$</span>
+                          <input
+                            type="number"
+                            value={newBuildSpend}
+                            onChange={(e) => setNewBuildSpend(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-24 px-2 py-1 text-right border border-stone-200 rounded font-mono text-slate-800 font-semibold focus:outline-none focus:border-purple-900"
+                          />
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2500000"
+                        step="10000"
+                        value={newBuildSpend}
+                        onChange={(e) => setNewBuildSpend(parseInt(e.target.value))}
+                        className="w-full accent-purple-900 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>$0</span>
+                        <span>$500k</span>
+                        <span>$1.0M</span>
+                        <span>$1.5M</span>
+                        <span>$2.0M</span>
+                        <span>$2.5M</span>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap pt-0.5">
+                        {[250000, 500000, 1000000, 1500000, 2000000, 2500000].map((val) => (
+                          <button
+                            key={val}
+                            onClick={() => setNewBuildSpend(val)}
+                            className={`px-2 py-0.5 text-[9px] font-mono border rounded cursor-pointer transition ${
+                              newBuildSpend === val
+                                ? "bg-purple-900 text-white border-purple-950 font-bold"
+                                : "bg-white text-stone-600 hover:bg-stone-50 border-stone-200"
+                            }`}
+                          >
+                            ${(val / 1000).toFixed(0)}k
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Slider 2: Timing of Draw */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="font-bold text-stone-800">Build Settle Timing:</label>
+                        <span className="font-mono text-purple-900 font-extrabold text-[13px] bg-purple-50 px-2 py-0.5 rounded border border-purple-100">
+                          Yr {Math.floor(Math.round(newBuildTiming * 12) / 12)}.{Math.round(newBuildTiming * 12) % 12} ({Math.round(newBuildTiming * 12)}m) — {2026 + Math.floor(newBuildTiming)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="30"
+                        step="0.08333" // monthly
+                        value={newBuildTiming}
+                        onChange={(e) => setNewBuildTiming(parseFloat(e.target.value))}
+                        className="w-full accent-purple-900 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>Immediate (0m)</span>
+                        <span>15 Years</span>
+                        <span>30 Years</span>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap pt-0.5">
+                        {[0, 1, 2, 2.5, 3, 5, 10, 15].map((val) => {
+                          const m = Math.round(val * 12);
+                          return (
+                            <button
+                              key={val}
+                              onClick={() => setNewBuildTiming(val)}
+                              className={`px-2 py-0.5 text-[9px] font-mono border rounded cursor-pointer transition ${
+                                Math.abs(newBuildTiming - val) < 0.02
+                                  ? "bg-purple-900 text-white border-purple-950 font-bold"
+                                  : "bg-white text-stone-600 hover:bg-stone-50 border-stone-200"
+                              }`}
+                            >
+                              {val === 0 ? "Day 1" : val % 1 === 0 ? `Yr ${val}` : `Yr ${val}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Slider 3: Retained Offset Cash Buffer */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <label className="font-bold text-stone-800">Retained Cash Buffer:</label>
+                          <span className="text-[10px] text-stone-400 font-serif block font-normal leading-tight">Preserves this much cash; won't draw from it</span>
+                        </div>
+                        <span className="font-mono text-stone-700 font-bold">${newBuildBuffer.toLocaleString()}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="400000"
+                        step="5000"
+                        value={newBuildBuffer}
+                        onChange={(e) => setNewBuildBuffer(parseInt(e.target.value))}
+                        className="w-full accent-purple-900 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>$0 (Aggressive)</span>
+                        <span>$100k</span>
+                        <span>$200k</span>
+                        <span>$400k (Safe)</span>
+                      </div>
+                    </div>
+
+                    {/* Slider 4: Capital Draw Percentage */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <label className="font-bold text-stone-800">Liquid Offset Draw Ratio:</label>
+                          <span className="text-[10px] text-stone-400 font-serif block font-normal leading-tight">Percentage of excess offset cash block to pull</span>
+                        </div>
+                        <span className="font-mono text-purple-900 font-extrabold text-[13px] bg-purple-50 px-2 py-0.5 rounded border border-purple-100">{newBuildDrawChoicePct}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={newBuildDrawChoicePct}
+                        onChange={(e) => setNewBuildDrawChoicePct(parseInt(e.target.value))}
+                        className="w-full accent-purple-900 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>0% (All Loan)</span>
+                        <span>50% (Symmetrical)</span>
+                        <span>100% (All Retained Cash)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Key-value HUD & Dynamic Insights */}
+                  <div className="space-y-4 flex flex-col justify-between">
+                    <div className="bg-purple-50/40 rounded-xl border border-purple-100 p-5 space-y-4 flex-1">
+                      <h5 className="font-bold text-xs uppercase font-serif tracking-wide text-purple-900 border-b border-purple-100 pb-2">
+                        Dynamic Ingress & Drawdown Ledger
+                      </h5>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="bg-white p-2.5 rounded border border-stone-200 shadow-sm">
+                          <span className="text-[10px] text-stone-400 font-bold block uppercase leading-snug">Available Offset Liquid Reserves</span>
+                          <span className="font-mono text-zinc-800 text-[14px] font-extrabold">
+                            ${(finances.liquidOffsetAtBuild || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[9px] text-stone-400 block pt-0.5 leading-snug">
+                            Total offsets saved by month {Math.round(newBuildTiming * 12)}
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-2.5 rounded border border-stone-200 shadow-sm">
+                          <span className="text-[10px] text-stone-400 font-bold block uppercase leading-snug">Draw Cap (Excess Over Buffer)</span>
+                          <span className="font-mono text-emerald-800 text-[14px] font-semibold">
+                            ${Math.max(0, (finances.liquidOffsetAtBuild || 0) - newBuildBuffer).toLocaleString()}
+                          </span>
+                          <span className="text-[9px] text-stone-400 block pt-0.5 leading-snug font-serif">
+                            Maximum possible draw to avoid cash strain
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-2.5 rounded border border-stone-200 shadow-sm">
+                          <span className="text-[10px] text-stone-400 font-bold block uppercase leading-snug">Drawn from Retained Offsets</span>
+                          <span className="font-mono text-purple-800 text-[14px] font-extrabold">
+                            -${(finances.actualDrawFromOffsets || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[9px] text-stone-400 block pt-0.5 leading-snug">
+                            Offset money pulled to pay build costs
+                          </span>
+                        </div>
+
+                        <div className="bg-white p-2.5 rounded border border-stone-200 shadow-sm">
+                          <span className="text-[10px] text-stone-400 font-bold block uppercase leading-snug">Build Loan Balance Formed</span>
+                          <span className="font-mono text-zinc-950 text-[14px] font-extrabold">
+                            ${(finances.newBuildLoanAmount || 0).toLocaleString()}
+                          </span>
+                          <span className="text-[9px] text-stone-400 block pt-0.5 leading-snug">
+                            Remaining cost placed on purple loan
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Summary details inside right card */}
+                      <div className="bg-white p-3 rounded-xl border border-purple-150 space-y-2 mt-4 text-[11px] leading-relaxed">
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-stone-600">Model Loan Interest Rate:</span>
+                          <span className="font-mono text-stone-850 font-bold">{inputs.interestRate}% <span className="font-normal text-[10px]">(Inherited)</span></span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-stone-600">Weekly P&amp;I Repayment:</span>
+                          <span className="font-mono text-purple-900 font-extrabold text-xs">
+                            +${Math.round(finances.newBuildWeeklyPayment || 0)}/wk
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-semibold text-stone-600">Total Build Loan Interest Paid:</span>
+                          <span className="font-mono text-zinc-800 font-semibold">
+                            ${Math.round(finances.newBuildInterestPaid || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-[9px] text-justify text-stone-400 font-serif pt-1.5 border-t border-dashed border-stone-150">
+                          *Mechanics Note: The New Build Offset account automatically attaches to this purple loan. When Forever Home and Fern St loans are fully offset, any surplus weekly savings (+ cattle agistment, etc.) will stream here to accelerate compounding, save interest, and shorten payoff years.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: Impact on Finances in the Future */}
+              <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
+                <div>
+                  <h3 className="text-lg font-bold text-blue-900 font-serif">
+                    Financial Impact Analysis & Comparison
+                  </h3>
+                  <p className="text-xs text-stone-500 mt-1 font-serif">
+                    Double-bonded comparison: Models the standard baseline portfolio net debt trajectory against the active custom scenario with future draws or income streams.
+                  </p>
+                </div>
+
+                {/* TRAJECTORY COMPARISON GRAPH */}
+                <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 relative">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] font-serif font-bold text-blue-950 mb-3 justify-end leading-none print:hidden">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-indigo-500 inline-block"></span>
+                      <span>FH Loan Principal</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-indigo-300 inline-block" style={{ borderBottom: "1.5px dashed #a5b4fc" }}></span>
+                      <span>FH Offset</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-emerald-500 inline-block"></span>
+                      <span>Fern St Loan Principal</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-emerald-300 inline-block" style={{ borderBottom: "1.5px dashed #6ee7b7" }}></span>
+                      <span>Fern St Offset</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-amber-500 inline-block"></span>
+                      <span>New Loans Principal</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-amber-300 inline-block" style={{ borderBottom: "1.5px dashed #fcd34d" }}></span>
+                      <span>New Loans Offset</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5" style={{ borderBottom: "1.5px solid #7e22ce" }}></span>
+                      <span className="text-purple-700 font-extrabold">New Build Loan</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5" style={{ borderBottom: "1.5px dashed #a855f7" }}></span>
+                      <span className="text-purple-500 font-extrabold">New Build Offset</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-cyan-500 inline-block" style={{ borderBottom: "1.5px dashed #06b6d4" }}></span>
+                      <span className="text-cyan-600">Extra Cash Savings</span>
+                    </div>
+                  </div>
+
+                  <svg
+                    viewBox="0 0 800 280"
+                    className="w-full h-auto overflow-visible select-none"
+                  >
+                    {(() => {
+                      if (!finances.simulationData || finances.simulationData.length === 0) return null;
+
+                      // Calculate safe maximum bounds considering individual loans and offsets
+                      const maxDataVal = Math.max(
+                        100000,
+                        ...finances.simulationData.map((d: any) => Math.max(
+                          d.loanFH || 0,
+                          d.offsetFH || 0,
+                          d.loanFern || 0,
+                          d.offsetFern || 0,
+                          d.newBuildLoan || 0,
+                          d.newBuildOffset || 0,
+                          d.newLoansPayable || 0,
+                          d.newLoansOffset || 0,
+                          d.extraCashSavings || 0
+                        ))
+                      ) || 1200000;
+
+                      // Make clean rounding steps for cleaner lines
+                      const yStep = maxDataVal > 2000000 ? 500000 : maxDataVal > 1000000 ? 250000 : maxDataVal > 500000 ? 200000 : 100000;
+                      const yMax = Math.ceil(maxDataVal / yStep) * yStep;
+
+                      const yTicks = [];
+                      for (let val = 0; val <= yMax; val += yStep) {
+                        yTicks.push(val);
+                      }
+
+                      const getX = (index: number) => 60 + (index / (finances.simulationData.length - 1)) * 700;
+                      const getY = (val: number) => 240 - (Math.max(0, val) / yMax) * 200;
+
+                      let fhLoanPoints = "";
+                      let fhOffsetPoints = "";
+                      let fernLoanPoints = "";
+                      let fernOffsetPoints = "";
+                      let newBuildLoanPoints = "";
+                      let newBuildOffsetPoints = "";
+                      let newLoansLoanPoints = "";
+                      let newLoansOffsetPoints = "";
+                      let extraSavingsPoints = "";
+
+                      finances.simulationData.forEach((d: any, idx: number) => {
+                        const x = getX(idx);
+
+                        fhLoanPoints += `${x.toFixed(2)},${getY(d.loanFH || 0).toFixed(2)} `;
+                        fhOffsetPoints += `${x.toFixed(2)},${getY(d.offsetFH || 0).toFixed(2)} `;
+
+                        fernLoanPoints += `${x.toFixed(2)},${getY(d.loanFern || 0).toFixed(2)} `;
+                        fernOffsetPoints += `${x.toFixed(2)},${getY(d.offsetFern || 0).toFixed(2)} `;
+
+                        newBuildLoanPoints += `${x.toFixed(2)},${getY(d.newBuildLoan || 0).toFixed(2)} `;
+                        newBuildOffsetPoints += `${x.toFixed(2)},${getY(d.newBuildOffset || 0).toFixed(2)} `;
+
+                        newLoansLoanPoints += `${x.toFixed(2)},${getY(d.newLoansPayable || 0).toFixed(2)} `;
+                        newLoansOffsetPoints += `${x.toFixed(2)},${getY(d.newLoansOffset || 0).toFixed(2)} `;
+
+                        extraSavingsPoints += `${x.toFixed(2)},${getY(d.extraCashSavings || 0).toFixed(2)} `;
+                      });
+
+                      // We have exactly 30 years in simulation
+                      const xTicks = [0, 5, 10, 15, 20, 25, 30];
+
+                      return (
+                        <g>
+                          {/* Y-Axis lines at rounded intervals */}
+                          {yTicks.map((tick) => {
+                            const y = getY(tick);
+                            const isBaseline = tick === 0;
+                            return (
+                              <g key={tick}>
+                                <line
+                                  x1="60"
+                                  y1={y}
+                                  x2="760"
+                                  y2={y}
+                                  stroke={isBaseline ? "#94a3b8" : "#e2e8f0"}
+                                  strokeWidth={isBaseline ? "1.5" : "1"}
+                                  strokeDasharray={isBaseline ? "0" : "4 4"}
+                                />
+                                <text
+                                  x="52"
+                                  y={y + 3.5}
+                                  textAnchor="end"
+                                  className="fill-stone-500 font-mono text-[9px] font-medium"
+                                >
+                                  {tick === 0
+                                    ? "$0"
+                                    : tick >= 1000000
+                                    ? `$${(tick / 1000000)
+                                        .toFixed(2)
+                                        .replace(/\.0+$/, "")}M`
+                                    : `$${tick / 1000}k`}
+                                </text>
+                              </g>
+                            );
+                          })}
+
+                          {/* X-Axis increments representing years up to 30 */}
+                          {xTicks.map((yr) => {
+                            const x = 60 + (yr / 30) * 700;
+                            const calYear = 2026 + yr;
+                            return (
+                              <g key={yr}>
+                                <line
+                                  x1={x}
+                                  y1={40}
+                                  x2={x}
+                                  y2={240}
+                                  stroke="#e2e8f0"
+                                  strokeWidth="1"
+                                  strokeDasharray="4 4"
+                                />
+                                <line
+                                  x1={x}
+                                  y1={240}
+                                  x2={x}
+                                  y2={245}
+                                  stroke="#94a3b8"
+                                  strokeWidth="1"
+                                />
+                                <text
+                                  x={x}
+                                  y={262}
+                                  textAnchor="middle"
+                                  className="font-serif text-[10px] font-semibold text-stone-600"
+                                >
+                                  Yr {yr} - {calYear}
+                                </text>
+                              </g>
+                            );
+                          })}
+
+                          {/* Forever Home Loan Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#6366f1"
+                            strokeWidth="2"
+                            points={fhLoanPoints}
+                          />
+
+                          {/* Forever Home Offset Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#6366f1"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            points={fhOffsetPoints}
+                          />
+
+                          {/* Fern Street Loan Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#10b981"
+                            strokeWidth="2"
+                            points={fernLoanPoints}
+                          />
+
+                          {/* Fern Street Offset Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#10b981"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            points={fernOffsetPoints}
+                          />
+
+                          {/* New Build Loan Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#7e22ce"
+                            strokeWidth="2"
+                            points={newBuildLoanPoints}
+                          />
+
+                          {/* New Build Offset Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#a855f7"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            points={newBuildOffsetPoints}
+                          />
+
+                          {/* New Loans Loan Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="2"
+                            points={newLoansLoanPoints}
+                          />
+
+                          {/* New Loans Offset Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            points={newLoansOffsetPoints}
+                          />
+
+                          {/* Extra Cash Savings Line */}
+                          <polyline
+                            fill="none"
+                            stroke="#06b6d4"
+                            strokeWidth="1.5"
+                            strokeDasharray="4 3"
+                            points={extraSavingsPoints}
+                          />
+                        </g>
+                      );
+                    })()}
+                  </svg>
+                </div>
+
+                {/* THREE LEDGER MILESTONE COMPARATIVE CARDS */}
+                {(() => {
+                  // FIND NEW BUILD FULL OFFSET WEEK
+                  const nbFullyOffsetItem = finances.simulationData.find(
+                    (d: any) => d.newBuildLoan > 0 && d.newBuildOffset >= d.newBuildLoan
+                  );
+                  const nbFullyOffsetWeek = nbFullyOffsetItem ? nbFullyOffsetItem.week : -1;
+
+                  // FIND NEW LOANS FULL OFFSET WEEK
+                  const nlFullyOffsetItem = finances.simulationData.find(
+                    (d: any) => d.newLoansPayable > 0 && d.newLoansOffset >= d.newLoansPayable
+                  );
+                  const nlFullyOffsetWeek = nlFullyOffsetItem ? nlFullyOffsetItem.week : -1;
+
+                  // REMAINDER IN OFFSET AFTER BUILD DEDUCTION
+                  const remainingOffsetAfterBuild = Math.max(0, finances.liquidOffsetAtBuild - finances.actualDrawFromOffsets);
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* BOX 1: CORE DEBT NEUTRALIZATION (FOREVER HOME & FERN ST) */}
+                      <div className="bg-blue-50/40 p-4 rounded-xl border border-blue-150 shadow-sm flex flex-col justify-between space-y-2.5">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-blue-900 block font-serif border-b border-blue-200/50 pb-1.5 mb-2">
+                            Core Debt Neutralization
+                          </span>
+                          <div className="text-xs font-serif leading-relaxed text-stone-700 space-y-2">
+                            <div>
+                              Status:{" "}
+                              {finances.bothNeutralizedWeek !== -1 ? (
+                                <span className="text-emerald-700 font-extrabold font-sans">
+                                  Achieved in {getMilestoneDateStr(finances.bothNeutralizedWeek)}
+                                </span>
+                              ) : (
+                                <span className="text-rose-700 font-bold font-sans">
+                                  Not fully offset in 30 years
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-stone-600">
+                              When Forever Home and Fern Street mortgages are both 100% neutralized by your offsets. 
+                              {finances.bothNeutralizedWeek !== -1 ? (
+                                ` This is projected to occur in Yr ${finances.bothOffsetYears} under the current setting of $${inputs.weeklySavings.toLocaleString()}/wk savings.`
+                              ) : (
+                                " Increasing your weekly savings rate or routing sale proceeds would pull this timeline forward."
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOX 2: NEW BUILD COMMENCEMENT STATS */}
+                      <div className="bg-purple-50/40 p-4 rounded-xl border border-purple-150 shadow-sm flex flex-col justify-between space-y-2.5">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-purple-900 block font-serif border-b border-purple-200/50 pb-1.5 mb-2">
+                            New Build Launch State
+                          </span>
+                          <div className="text-xs font-serif leading-relaxed text-stone-700 space-y-2">
+                            <div>
+                              Commencement:{" "}
+                              <span className="text-purple-900 font-extrabold font-sans">
+                                Yr {newBuildTiming} ({getMilestoneDateStr(Math.round(newBuildTiming * 52))})
+                              </span>
+                            </div>
+                            <div className="space-y-1 text-[11px] text-stone-600">
+                              <p>
+                                • Loan drawn: <strong className="text-stone-800">${Math.round(finances.newBuildLoanAmount).toLocaleString()}</strong>
+                              </p>
+                              <p>
+                                • Repayment rate: <strong className="text-purple-900">+${Math.round(finances.newBuildWeeklyPayment || 0)}/wk</strong>
+                              </p>
+                              <p>
+                                • Buffer retained: <strong className="text-emerald-700">${Math.round(remainingOffsetAfterBuild).toLocaleString()}</strong> remaining in offsets of your <strong className="text-stone-800">${Math.round(finances.liquidOffsetAtBuild).toLocaleString()}</strong> cash reserve.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* BOX 3: INDIVIDUAL OFFSET MILESTONES */}
+                      <div className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-150 shadow-sm flex flex-col justify-between space-y-2.5">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-900 block font-serif border-b border-emerald-200/50 pb-1.5 mb-2 font-bold font-bold">
+                            Loan Neutrality Target Dates
+                          </span>
+                          <div className="text-[11px] font-sans leading-relaxed text-stone-600 space-y-1.5">
+                            <div className="flex justify-between border-b border-dashed border-stone-200/60 pb-1 font-serif">
+                              <span>Forever Home:</span>
+                              <strong className="text-stone-800">
+                                {finances.fhNeutralizedWeek !== -1
+                                  ? `${getMilestoneDateStr(finances.fhNeutralizedWeek)} (Yr ${finances.fhOffsetYears})`
+                                  : "30+ Years"}
+                              </strong>
+                            </div>
+                            <div className="flex justify-between border-b border-dashed border-stone-200/60 pb-1 font-serif">
+                              <span>Fern Street:</span>
+                              <strong className="text-stone-800">
+                                {finances.bothNeutralizedWeek !== -1
+                                  ? `${getMilestoneDateStr(finances.bothNeutralizedWeek)} (Yr ${finances.bothOffsetYears})`
+                                  : "30+ Years"}
+                              </strong>
+                            </div>
+                            <div className="flex justify-between border-b border-dashed border-stone-200/60 pb-1 font-serif">
+                              <span>New Build:</span>
+                              <strong className="text-stone-800">
+                                {nbFullyOffsetWeek !== -1
+                                  ? `${getMilestoneDateStr(nbFullyOffsetWeek)} (Yr ${(nbFullyOffsetWeek / 52).toFixed(1)})`
+                                  : "Not offset / No build"}
+                              </strong>
+                            </div>
+                            {nlFullyOffsetWeek !== -1 && (
+                              <div className="flex justify-between font-serif">
+                                <span>Other Loans:</span>
+                                <strong className="text-stone-800">
+                                  {getMilestoneDateStr(nlFullyOffsetWeek)} (Yr {(nlFullyOffsetWeek / 52).toFixed(1)})
+                                </strong>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Trajectory comparison grid */}
+                <div className="border-t border-stone-150 pt-4">
+                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-2.5 font-serif">
+                    Comparative Trajectory Snapshot (Selected Year Milestones)
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-center text-[10px] font-mono leading-normal">
+                    {(() => {
+                      const activeMilestones = [
+                        finances.simulationData[0], // Year 0
+                        finances.simulationData[Math.floor(finances.simulationData.length * 0.16)] || finances.simulationData[4], // Yr 5
+                        finances.simulationData[Math.floor(finances.simulationData.length * 0.33)] || finances.simulationData[8], // Yr 10
+                        finances.simulationData[Math.floor(finances.simulationData.length * 0.5)] || finances.simulationData[12], // Yr 15
+                        finances.simulationData[Math.floor(finances.simulationData.length * 0.66)] || finances.simulationData[16], // Yr 20
+                        finances.simulationData[Math.floor(finances.simulationData.length * 0.83)] || finances.simulationData[20], // Yr 25
+                        finances.simulationData[finances.simulationData.length - 1], // Year 30
+                      ].filter(Boolean);
+
+                      const baselineMilestones = [
+                        finances.baselineSimulationData[0],
+                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.16)] || finances.baselineSimulationData[4],
+                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.33)] || finances.baselineSimulationData[8],
+                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.5)] || finances.baselineSimulationData[12],
+                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.66)] || finances.baselineSimulationData[16],
+                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.83)] || finances.baselineSimulationData[20],
+                        finances.baselineSimulationData[finances.baselineSimulationData.length - 1],
+                      ].filter(Boolean);
+
+                      return activeMilestones.map((item: any, idx: number) => {
+                        const base = baselineMilestones[idx] || { netDebt: 0 };
+                        const yearNum = Math.round(item.week / 52);
+                        return (
+                          <div key={idx} className="bg-stone-50 border border-stone-200 p-2.5 rounded-lg space-y-1">
+                            <span className="font-serif font-bold text-stone-500 block text-[9px]">Yr {yearNum} Net Debt</span>
+                            <div className="text-[9px] text-stone-400">
+                              Base: ${base.netDebt.toLocaleString()}
+                            </div>
+                            <div className="font-bold text-indigo-950 font-sans text-[10.5px]">
+                              Active: ${item.netDebt.toLocaleString()}
+                            </div>
+                            <div className={`text-[8.5px] font-bold ${item.netDebt > base.netDebt ? "text-rose-700" : item.netDebt < base.netDebt ? "text-emerald-700" : "text-stone-400"}`}>
+                              {item.netDebt > base.netDebt
+                                ? `+$${Math.abs(item.netDebt - base.netDebt).toLocaleString()}`
+                                : item.netDebt < base.netDebt
+                                ? `-$${Math.abs(base.netDebt - item.netDebt).toLocaleString()}`
+                                : "±0"}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-stone-400 font-serif leading-relaxed italic text-center pt-2">
+                  * All simulated secondary income streams (cattle leases, custom agistment yields) are subjected to a standard capital taxation haircut of 15% which is clearly shown in small writing underneath and fully dynamically computed inside your visual portfolio models above.
+                </div>
               </section>
             </div>
           </div> {/* Closing Right Column */}
