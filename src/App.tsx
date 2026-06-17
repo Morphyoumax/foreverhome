@@ -1040,13 +1040,35 @@ export default function App() {
       const fhInterest = Math.max(0, bSimLoanFH - bSimOffsetFH) * rWeeklyFHSim;
       const fernInterest = Math.max(0, bSimLoanFern - bSimOffsetFern) * rWeeklyFernSim;
 
-      const fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
+      let actualFhPaymentPaid = 0;
+      let fhPrincipalReduction = 0;
+      if (bSimLoanFH > 0) {
+        fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
+        if (bSimLoanFH - fhPrincipalReduction <= 0) {
+          actualFhPaymentPaid = fhInterest + bSimLoanFH;
+        } else {
+          actualFhPaymentPaid = recastWeeklyPayment;
+        }
+      }
       bSimLoanFH = Math.max(0, bSimLoanFH - fhPrincipalReduction);
 
-      const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
+      let actualFernPaymentPaid = 0;
+      let fernPrincipalReduction = 0;
+      if (bSimLoanFern > 0) {
+        fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
+        if (bSimLoanFern - fernPrincipalReduction <= 0) {
+          actualFernPaymentPaid = fernInterest + bSimLoanFern;
+        } else {
+          actualFernPaymentPaid = fernWeeklyPayment;
+        }
+      }
       bSimLoanFern = Math.max(0, bSimLoanFern - fernPrincipalReduction);
 
-      let remainingSavings = inputs.weeklySavings;
+      // Freed up payments from loans completely ended
+      const fhFreedUp = recastWeeklyPayment - actualFhPaymentPaid;
+      const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
+
+      let remainingSavings = inputs.weeklySavings + fhFreedUp + fernFreedUp;
 
       // Clamping of baseline offsets due to decreasing loan principal
       let bExcessFromClamping = 0;
@@ -1082,6 +1104,13 @@ export default function App() {
       }
 
       if (w % 13 === 0 || w === 30 * 52) {
+        const tVal = w / 52;
+        const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
+        const fernVal = 850000 * Math.pow(1.05, tVal);
+        const totalPropValue = Math.round(fhVal + fernVal);
+        const currentNetDebt = (bSimLoanFH - bSimOffsetFH) + (bSimLoanFern - bSimOffsetFern) - bSimExtraCashSavings;
+        const netWealthVal = Math.round(totalPropValue - currentNetDebt);
+
         baselineSimulationData.push({
           week: w,
           year: (w / 52).toFixed(1),
@@ -1090,9 +1119,9 @@ export default function App() {
           loanFern: Math.round(bSimLoanFern),
           offsetFern: Math.round(bSimOffsetFern),
           extraCashSavings: Math.round(bSimExtraCashSavings),
-          netDebt: Math.round(
-            (bSimLoanFH - bSimOffsetFH) + (bSimLoanFern - bSimOffsetFern) - bSimExtraCashSavings
-          ),
+          netDebt: Math.round(currentNetDebt),
+          propertyValue: totalPropValue,
+          netWealth: netWealthVal,
         });
       }
     }
@@ -1136,6 +1165,10 @@ export default function App() {
     let fhTotalInterestPaidSim = 0;
     let fernTotalInterestPaidSim = 0;
     let nbTotalInterestPaidSim = 0;
+
+    let fhTotalPaidSim = 0;
+    let fernTotalPaidSim = 0;
+    let nbTotalPaidSim = 0;
 
     let fhInterestAtOffset = 0;
     let fhInterestAtBothOffset = 0;
@@ -1340,11 +1373,17 @@ export default function App() {
         fernNeutralizedWeek = w;
       }
 
+      let actualFhPaymentPaid = 0;
       if (simLoanFH > 0) {
         fhTotalInterestPaidSim += fhInterest;
+        actualFhPaymentPaid = Math.min(simLoanFH + fhInterest, recastWeeklyPayment);
+        fhTotalPaidSim += actualFhPaymentPaid;
       }
+      let actualFernPaymentPaid = 0;
       if (simLoanFern > 0) {
         fernTotalInterestPaidSim += fernInterest;
+        actualFernPaymentPaid = Math.min(simLoanFern + fernInterest, fernWeeklyPayment);
+        fernTotalPaidSim += actualFernPaymentPaid;
       }
 
       const fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
@@ -1360,10 +1399,13 @@ export default function App() {
       simLoanFern = Math.max(0, simLoanFern - fernPrincipalReduction);
 
       // 4. Model the New Build Loan performance
+      let actualNbPaymentPaid = 0;
       if (simLoanNewBuild > 0 && w >= w_build) {
         const nbInterest = Math.max(0, simLoanNewBuild - simOffsetNewBuild) * rWeeklyFHSim;
         newBuildInterestPaid += nbInterest;
         nbTotalInterestPaidSim += nbInterest;
+        actualNbPaymentPaid = Math.min(simLoanNewBuild + nbInterest, newBuildWeeklyPayment);
+        nbTotalPaidSim += actualNbPaymentPaid;
         const nbPrincipalPaid = Math.max(0, newBuildWeeklyPayment - nbInterest);
         if (simLoanNewBuild - nbPrincipalPaid <= 0 && nbPaidOffWeek === -1) {
           nbPaidOffWeek = w;
@@ -1374,8 +1416,12 @@ export default function App() {
         simLoanNewBuild = Math.max(0, simLoanNewBuild - nbPrincipalPaid);
       }
 
-      // Track savings surplus or repayment deficit
-      let remainingSavings = inputs.weeklySavings + extraWeeklyIncomeInThisWeek;
+      // Freed up payments from loans completely ended
+      const fhFreedUp = recastWeeklyPayment - actualFhPaymentPaid;
+      const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
+
+      // Track savings surplus or repayment deficit (repayments redirected to cash/offsets on payoff)
+      let remainingSavings = inputs.weeklySavings + extraWeeklyIncomeInThisWeek + fhFreedUp + fernFreedUp;
 
       // Pay off new loans weekly repayments
       let totalNewLoansRepayment = 0;
@@ -1388,18 +1434,23 @@ export default function App() {
           const lInterest = Math.max(0, loan.principal - loan.offset) * rWeeklyFHSim;
           activeNewLoansInterestPaid += lInterest;
           const lPrincipalPaid = Math.max(0, loan.weeklyPayment - lInterest);
-          loan.principal = Math.max(0, loan.principal - lPrincipalPaid);
-          totalNewLoansRepayment += loan.weeklyPayment;
+          
+          let actualPayment = loan.weeklyPayment;
+          if (loan.principal - lPrincipalPaid <= 0) {
+            actualPayment = lInterest + loan.principal;
+            loan.principal = 0;
+          } else {
+            loan.principal = loan.principal - lPrincipalPaid;
+          }
+          
+          totalNewLoansRepayment += actualPayment;
           totalNewLoansPrincipal += loan.principal;
           totalNewLoansOffset += loan.offset;
         }
       });
 
       remainingSavings -= totalNewLoansRepayment;
-
-      if (w >= w_build && simLoanNewBuild > 0) {
-        remainingSavings -= newBuildWeeklyPayment;
-      }
+      remainingSavings -= actualNbPaymentPaid;
 
       // Deficit handling inside active simulation: pull from extra cash savings first, then offset accounts to cover the loan costs
       if (remainingSavings < 0) {
@@ -1536,6 +1587,21 @@ export default function App() {
       });
 
       if (w % 13 === 0 || w === 30 * 52) {
+        const tVal = w / 52;
+        const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
+        const fernVal = 850000 * Math.pow(1.05, tVal);
+        let nbVal = 0;
+        if (w >= w_build) {
+          nbVal = newBuildSpend * Math.pow(1.05, (w - w_build) / 52);
+        }
+        const totalPropValue = Math.round(fhVal + fernVal + nbVal);
+        const currentNetDebt = (simLoanFH - simOffsetFH) + 
+          (simLoanFern - simOffsetFern) + 
+          (totalNewLoansPrincipal - totalNewLoansOffset) +
+          (simLoanNewBuild - simOffsetNewBuild) -
+          simExtraCashSavings;
+        const netWealthVal = Math.round(totalPropValue - currentNetDebt);
+
         simulationData.push({
           week: w,
           year: (w / 52).toFixed(1),
@@ -1548,13 +1614,9 @@ export default function App() {
           newBuildLoan: Math.round(simLoanNewBuild),
           newBuildOffset: Math.round(simOffsetNewBuild),
           extraCashSavings: Math.round(simExtraCashSavings),
-          netDebt: Math.round(
-            (simLoanFH - simOffsetFH) + 
-            (simLoanFern - simOffsetFern) + 
-            (totalNewLoansPrincipal - totalNewLoansOffset) +
-            (simLoanNewBuild - simOffsetNewBuild) -
-            simExtraCashSavings
-          ),
+          netDebt: Math.round(currentNetDebt),
+          propertyValue: totalPropValue,
+          netWealth: netWealthVal,
         });
       }
     }
@@ -1917,6 +1979,9 @@ export default function App() {
       fhTotalInterestPaidSim,
       fernTotalInterestPaidSim,
       nbTotalInterestPaidSim,
+      fhTotalPaidSim,
+      fernTotalPaidSim,
+      nbTotalPaidSim,
     };
   }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct]);
 
@@ -7989,6 +8054,428 @@ export default function App() {
 
                 <div className="text-[10px] text-stone-400 font-serif leading-relaxed italic text-center pt-2">
                   * All simulated secondary income streams (cattle leases, custom agistment yields) are subjected to a standard capital taxation haircut of 15% which is clearly shown in small writing underneath and fully dynamically computed inside your visual portfolio models above.
+                </div>
+              </section>
+
+              {/* SECTION: MONEY OVERVIEW */}
+              <section className="bg-white border border-stone-200 rounded-xl p-6 shadow-sm print-card space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-stone-200 pb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <Icons.Dollar className="w-5 h-5 text-blue-900" />
+                    <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wider font-serif">
+                      Money Overview — Portfolio Mortgages & Net Wealth Tracker
+                    </h3>
+                  </div>
+                  <span className="text-[10px] bg-slate-100 text-slate-705 px-2 py-1 rounded font-medium font-sans border border-slate-200">
+                    Simulation Horizon: 30 Years (1560 Weeks)
+                  </span>
+                </div>
+
+                <p className="text-xs text-stone-600 leading-relaxed font-serif">
+                  Underneath target metrics, this section reconciles long-term mortgage amortizations with asset growth to calculate total interest, contractual timelines, and portfolio net wealth. Property values are projected dynamically using a conservative <strong>5.0% annual compound growth rate</strong> on top of custom build investments.
+                </p>
+
+                {/* BOXES GRID */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  
+                  {/* BOX 1: FOREVER HOME MORTGAGE */}
+                  <div className="bg-gradient-to-br from-purple-50/50 to-white border border-purple-100 p-4 rounded-xl shadow-xs space-y-3 relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-purple-50 rounded-full -mr-6 -mt-6 -z-10 opacity-60"></div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold tracking-wider text-purple-800 font-sans block mb-1">
+                        Mortgage A (Forever Home)
+                      </span>
+                      <span className="font-serif font-bold text-stone-800 text-[13px] block">
+                        Forever Home Residence
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1.5 text-xs font-serif leading-relaxed text-stone-700">
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Repayment:</span>
+                        <span className="font-bold text-slate-800 font-mono">
+                          ${Math.round(finances.recastWeeklyPayment).toLocaleString()}/wk
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Timeline Start:</span>
+                        <span className="font-semibold text-slate-800 font-mono">
+                          Day 1 (Yr 0)
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Fully Offset:</span>
+                        <span className="font-semibold text-emerald-700 font-mono">
+                          {finances.fhNeutralizedWeek !== -1 ? `Yr ${(finances.fhNeutralizedWeek / 52).toFixed(1)}` : "30+ Years"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Fully Paid Off:</span>
+                        <span className="font-semibold text-blue-900 font-mono">
+                          {finances.fhPaidOffWeek !== -1 ? `Yr ${(finances.fhPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Total Interest Paid:</span>
+                        <span className="font-bold text-amber-700 font-mono">
+                          ${Math.round(finances.fhTotalInterestPaidSim).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-purple-100/50 pt-2.5 mt-2 flex justify-between items-center bg-purple-50/40 px-2 py-1.5 rounded-lg">
+                      <span className="text-[10px] text-purple-950 font-bold font-sans uppercase">Total paid back:</span>
+                      <span className="font-mono text-xs font-bold text-purple-900">
+                        ${Math.round(finances.fhTotalPaidSim).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* BOX 2: FERN ST HOLIDAY HOUSE */}
+                  <div className="bg-gradient-to-br from-cyan-50/50 to-white border border-cyan-100 p-4 rounded-xl shadow-xs space-y-3 relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-cyan-50 rounded-full -mr-6 -mt-6 -z-10 opacity-60"></div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold tracking-wider text-cyan-800 font-sans block mb-1">
+                        Mortgage B (Fern St)
+                      </span>
+                      <span className="font-serif font-bold text-stone-800 text-[13px] block">
+                        Fern St Holiday House
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs font-serif leading-relaxed text-stone-700">
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Repayment:</span>
+                        <span className="font-bold text-slate-800 font-mono">
+                          ${Math.round(finances.fernWeeklyPayment).toLocaleString()}/wk
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Timeline Start:</span>
+                        <span className="font-semibold text-slate-800 font-mono">
+                          Pre-existing
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Fully Offset:</span>
+                        <span className="font-semibold text-emerald-700 font-mono">
+                          {finances.fernNeutralizedWeek !== -1 ? `Yr ${(finances.fernNeutralizedWeek / 52).toFixed(1)}` : "30+ Years"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Fully Paid Off:</span>
+                        <span className="font-semibold text-blue-900 font-mono">
+                          {finances.fernPaidOffWeek !== -1 ? `Yr ${(finances.fernPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-stone-50 pb-1">
+                        <span className="text-stone-500">Total Interest Paid:</span>
+                        <span className="font-bold text-amber-700 font-mono">
+                          ${Math.round(finances.fernTotalInterestPaidSim).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-cyan-100/50 pt-2.5 mt-2 flex justify-between items-center bg-cyan-50/40 px-2 py-1.5 rounded-lg font-sans">
+                      <span className="text-[10px] text-cyan-955 font-bold uppercase">Total paid back:</span>
+                      <span className="font-mono text-xs font-bold text-cyan-900">
+                        ${Math.round(finances.fernTotalPaidSim).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* BOX 3: NEW BUILD */}
+                  <div className="bg-gradient-to-br from-amber-50/50 to-white border border-amber-100 p-4 rounded-xl shadow-xs space-y-3 relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-amber-50 rounded-full -mr-6 -mt-6 -z-10 opacity-60"></div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold tracking-wider text-amber-800 font-sans block mb-1">
+                        Mortgage C (New Build)
+                      </span>
+                      <span className="font-serif font-bold text-stone-800 text-[13px] block">
+                        Proposed New Construction
+                      </span>
+                    </div>
+
+                    {newBuildSpend > 0 ? (
+                      <div className="space-y-1.5 text-xs font-serif leading-relaxed text-stone-700">
+                        <div className="flex justify-between border-b border-stone-50 pb-1">
+                          <span className="text-stone-500">Repayment:</span>
+                          <span className="font-bold text-slate-800 font-mono">
+                            ${Math.round(finances.newBuildWeeklyPayment).toLocaleString()}/wk
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-stone-50 pb-1">
+                          <span className="text-stone-500">Timeline Start:</span>
+                          <span className="font-semibold text-slate-800 font-mono">
+                            Yr {newBuildTiming} ({Math.round(newBuildTiming * 12)}m)
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-stone-50 pb-1">
+                          <span className="text-stone-500">Fully Offset:</span>
+                          <span className="font-semibold text-emerald-700 font-mono">
+                            {finances.nbFullyOffsetWeek !== -1 ? `Yr ${(finances.nbFullyOffsetWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-stone-50 pb-1">
+                          <span className="text-stone-500">Fully Paid Off:</span>
+                          <span className="font-semibold text-blue-900 font-mono">
+                            {finances.nbPaidOffWeek !== -1 ? `Yr ${(finances.nbPaidOffWeek / 52).toFixed(1)}` : "30+ Years"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-b border-stone-50 pb-1">
+                          <span className="text-stone-550 mr-1 text-stone-500">Total Interest Paid:</span>
+                          <span className="font-bold text-amber-700 font-mono">
+                            ${Math.round(finances.nbTotalInterestPaidSim).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 text-stone-500 text-xs py-3 leading-relaxed font-serif text-center italic">
+                        New Build inactive.<br />
+                        Set custom budget above to activate this mortgage tracker box.
+                      </div>
+                    )}
+
+                    <div className="border-t border-amber-100/50 pt-2.5 mt-2 flex justify-between items-center bg-amber-50/40 px-2 py-1.5 rounded-lg font-sans">
+                      <span className="text-[10px] text-amber-955 font-bold uppercase">Total paid back:</span>
+                      <span className="font-mono text-xs font-bold text-amber-900">
+                        {newBuildSpend > 0 ? `$${Math.round(finances.nbTotalPaidSim).toLocaleString()}` : "—"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* BOX 4: PORTFOLIO SUMMARY (FAR RIGHT) */}
+                  <div className="bg-gradient-to-br from-emerald-600 to-indigo-950 p-4 rounded-xl shadow-md text-white space-y-3 relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-emerald-500 rounded-full opacity-25"></div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold tracking-wider text-emerald-200 block mb-1 font-sans">
+                        Consolidated Overview
+                      </span>
+                      <span className="font-serif font-bold text-[14px] block">
+                        Portfolio Totals (Banks)
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-xs font-serif leading-relaxed">
+                      <div className="flex justify-between border-b border-white/20 pb-1">
+                        <span className="text-emerald-100">Total Active Loans:</span>
+                        <span className="font-bold font-mono">
+                          {newBuildSpend > 0 ? "3 Contracts" : "2 Contracts"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-white/20 pb-1">
+                        <span className="text-emerald-100">Total Interest Paid:</span>
+                        <span className="font-bold text-amber-300 font-mono text-[12.5px]">
+                          ${Math.round(finances.fhTotalInterestPaidSim + finances.fernTotalInterestPaidSim + (newBuildSpend > 0 ? finances.nbTotalInterestPaidSim : 0)).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-white/20 pt-2 mt-1 font-serif">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-100 block mb-1 font-sans">
+                        Sum of All Back-Payments
+                      </span>
+                      <div className="text-xl font-bold leading-none tracking-tight font-mono text-emerald-200">
+                        ${Math.round(finances.fhTotalPaidSim + finances.fernTotalPaidSim + (newBuildSpend > 0 ? finances.nbTotalPaidSim : 0)).toLocaleString()}
+                      </div>
+                      <span className="text-[8px] text-emerald-300 italic block mt-0.5">
+                        Principal + Interest over 30 yrs
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* NET WEALTH TRACKER GRAPH */}
+                <div className="bg-stone-50 border border-stone-200 p-5 rounded-xl space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-150 pb-2.5 gap-2">
+                    <div>
+                      <h4 className="text-xs font-bold text-stone-900 uppercase tracking-widest font-serif flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 inline-block"></span>
+                        Net Wealth Tracker Line Graph
+                      </h4>
+                      <p className="text-[10px] text-stone-500 font-serif mt-1">
+                        Aggregates projected property values (with 5% compound growth) + cash/offset savings balances, minus active mortgage debts over time.
+                      </p>
+                    </div>
+                    
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-sans font-semibold text-stone-600">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-1.5 bg-cyan-500 rounded-xs inline-block"></span>
+                        <span>Active Portfolio Net Wealth</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-3 h-1.5 border-t border-dashed border-stone-400 inline-block"></span>
+                        <span>Baseline Scenario</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SVG RENDERING */}
+                  <div className="relative pt-2">
+                    <svg viewBox="0 0 800 280" className="w-full h-auto overflow-visible select-none">
+                      {(() => {
+                        const data = finances.simulationData;
+                        const baseData = finances.baselineSimulationData;
+                        if (!data || data.length === 0) return null;
+
+                        const maxActive = Math.max(...data.map(d => d.netWealth ?? 0));
+                        const maxBase = Math.max(...baseData.map(d => d.netWealth ?? 0));
+                        const maxVal = Math.max(maxActive, maxBase, 4000000);
+
+                        const yMax = Math.ceil(maxVal / 1000000) * 1000000;
+                        const step = yMax >= 8000000 ? 2000000 : 1000000;
+                        const yTicks: number[] = [];
+                        for (let val = 0; val <= yMax; val += step) {
+                          yTicks.push(val);
+                        }
+
+                        const getX = (index: number) => 70 + (index / (data.length - 1)) * 690;
+                        const getY = (val: number) => 230 - (val / yMax) * 190;
+
+                        let activePoints = "";
+                        let basePoints = "";
+
+                        data.forEach((d, idx) => {
+                          const x = getX(idx);
+                          activePoints += `${x.toFixed(1)},${getY(d.netWealth ?? 0).toFixed(1)} `;
+                        });
+
+                        baseData.forEach((d, idx) => {
+                          const x = getX(idx);
+                          basePoints += `${x.toFixed(1)},${getY(d.netWealth ?? 0).toFixed(1)} `;
+                        });
+
+                        const yearTicks = [0, 5, 10, 15, 20, 25, 30];
+
+                        return (
+                          <g>
+                            {/* Grid / Y-axis labels */}
+                            {yTicks.map(tick => {
+                              const y = getY(tick);
+                              const isZero = tick === 0;
+                              return (
+                                <g key={tick}>
+                                  <line
+                                    x1="70"
+                                    y1={y}
+                                    x2="760"
+                                    y2={y}
+                                    stroke={isZero ? "#78716c" : "#e7e5e4"}
+                                    strokeWidth={isZero ? "1.5" : "1"}
+                                    strokeDasharray={isZero ? "0" : "4 4"}
+                                  />
+                                  <text
+                                    x="60"
+                                    y={y + 3.5}
+                                    textAnchor="end"
+                                    className="fill-stone-500 font-mono text-[9px] font-semibold"
+                                  >
+                                    {tick === 0 ? "$0" : `$${(tick / 1000000).toFixed(0)}M`}
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {/* X-axis labels */}
+                            {yearTicks.map(yr => {
+                              const x = 70 + (yr / 30) * 690;
+                              const calYear = 2026 + yr;
+                              return (
+                                <g key={yr}>
+                                  <line
+                                    x1={x}
+                                    y1={230}
+                                    x2={x}
+                                    y2={235}
+                                    stroke="#78716c"
+                                    strokeWidth="1.2"
+                                  />
+                                  <text
+                                    x={x}
+                                    y={252}
+                                    textAnchor="middle"
+                                    className="font-serif text-[10px] font-bold text-stone-600"
+                                  >
+                                    Yr {yr}
+                                  </text>
+                                  <text
+                                    x={x}
+                                    y={264}
+                                    textAnchor="middle"
+                                    className="font-mono text-[8px] text-stone-400"
+                                  >
+                                    ({calYear})
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {/* Baseline Net Wealth Line */}
+                            <polyline
+                              fill="none"
+                              stroke="#a8a29e"
+                              strokeWidth="2"
+                              strokeDasharray="6 4"
+                              points={basePoints}
+                            />
+
+                            {/* Active Net Wealth Line */}
+                            <polyline
+                              fill="none"
+                              stroke="#06b6d4"
+                              strokeWidth="3.2"
+                              points={activePoints}
+                            />
+
+                            {/* Accent highlight markers on active trajectory */}
+                            {yearTicks.map(yr => {
+                              const yrDataIdx = Math.min(
+                                Math.round((yr / 30) * (data.length - 1)),
+                                data.length - 1
+                              );
+                              const d = data[yrDataIdx];
+                              if (!d) return null;
+                              
+                              const x = getX(yrDataIdx);
+                              const y = getY(d.netWealth ?? 0);
+                              
+                              return (
+                                <g key={`marker-${yr}`}>
+                                  <circle
+                                    cx={x}
+                                    cy={y}
+                                    r="4.5"
+                                    fill="#ffffff"
+                                    stroke="#0891b2"
+                                    strokeWidth="2.5"
+                                  />
+                                  {/* Value label */}
+                                  <rect
+                                    x={x - 30}
+                                    y={y - 21}
+                                    width="60"
+                                    height="14"
+                                    rx="3"
+                                    fill="#1e293b"
+                                    className="shadow-md"
+                                  />
+                                  <text
+                                    x={x}
+                                    y={y - 11}
+                                    textAnchor="middle"
+                                    className="fill-white font-mono text-[8.5px] font-bold"
+                                  >
+                                    ${((d.netWealth ?? 0) / 1000000).toFixed(2)}M
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </g>
+                        );
+                      })()}
+                    </svg>
+                  </div>
                 </div>
               </section>
             </div>

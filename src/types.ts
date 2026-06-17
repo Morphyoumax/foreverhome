@@ -62,6 +62,8 @@ export interface SimulationDataPoint {
   newBuildOffset?: number;
   extraCashSavings?: number;
   netDebt: number;
+  propertyValue?: number;
+  netWealth?: number;
 }
 
 export interface FutureExpense {
