@@ -1244,6 +1244,35 @@ export default function App() {
     let activeHalfOffsetWeek = -1;
     let activeFullyOffsetWeek = -1;
 
+    let fhInterestAtActiveFullyOffset = 0;
+    let fernInterestAtActiveFullyOffset = 0;
+    let nbInterestAtActiveFullyOffset = 0;
+    let newLoansInterestAtActiveFullyOffset = 0;
+
+    let milestoneActiveFullyOffset = {
+      fhLoan: 0,
+      fhOffset: 0,
+      fernLoan: 0,
+      fernOffset: 0,
+      nbLoan: 0,
+      nbOffset: 0,
+      otherLoan: 0,
+      otherOffset: 0,
+      week: -1,
+    };
+
+    const historyStateAtWeek = new Map<number, {
+      fhLoan: number;
+      fhOffset: number;
+      fernLoan: number;
+      fernOffset: number;
+      nbLoan: number;
+      nbOffset: number;
+      otherLoan: number;
+      otherOffset: number;
+      extraCash: number;
+    }>();
+
     for (let w = 0; w <= 30 * 52; w++) {
       // 1. Process future drawdowns/expenses starting this week
       futureExpenses.forEach((exp) => {
@@ -1355,10 +1384,8 @@ export default function App() {
       if (w >= w_build && activeTotalDebt > 0 && activeTotalOffsets >= activeTotalDebt * 0.5 && activeHalfOffsetWeek === -1) {
         activeHalfOffsetWeek = w;
       }
-      const isActiveFullyOffset = activeTotalOffsets >= activeTotalDebt || activeTotalDebt <= 0;
-      if (isActiveFullyOffset && activeFullyOffsetWeek === -1) {
-        activeFullyOffsetWeek = w;
-      }
+      const fhInterest = Math.max(0, simLoanFH - simOffsetFH) * rWeeklyFHSim;
+      const fernInterest = Math.max(0, simLoanFern - simOffsetFern) * rWeeklyFernSim;
 
       if (simOffsetFH >= simLoanFH && fhNeutralizedWeek === -1) {
         fhNeutralizedWeek = w;
@@ -1385,9 +1412,6 @@ export default function App() {
         };
       }
 
-      const fhInterest = Math.max(0, simLoanFH - simOffsetFH) * rWeeklyFHSim;
-      const fernInterest = Math.max(0, simLoanFern - simOffsetFern) * rWeeklyFernSim;
-
       // Accumulate interest paid prior to reaching neutralization milestones
       if (fhNeutralizedWeek === -1) {
         fhInterestAtOffset += fhInterest;
@@ -1396,6 +1420,19 @@ export default function App() {
         fhInterestAtBothOffset += fhInterest;
         fernInterestAtBothOffset += fernInterest;
       }
+
+      fhInterestAtActiveFullyOffset += fhInterest;
+      fernInterestAtActiveFullyOffset += fernInterest;
+      if (simLoanNewBuild > 0 && w >= w_build) {
+        const nbInterest = Math.max(0, simLoanNewBuild - simOffsetNewBuild) * rWeeklyFHSim;
+        nbInterestAtActiveFullyOffset += nbInterest;
+      }
+      activeNewLoans.forEach((loan) => {
+        if (loan.principal > 0) {
+          const lInterest = Math.max(0, loan.principal - loan.offset) * rWeeklyFHSim;
+          newLoansInterestAtActiveFullyOffset += lInterest;
+        }
+      });
 
       if (simOffsetFern >= simLoanFern && fernNeutralizedWeek === -1) {
         fernNeutralizedWeek = w;
@@ -1449,7 +1486,11 @@ export default function App() {
       const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
 
       // Track savings surplus or repayment deficit (repayments redirected to cash/offsets on payoff)
-      let remainingSavings = inputs.weeklySavings + extraWeeklyIncomeInThisWeek + fhFreedUp + fernFreedUp;
+      const currentActiveSavingsRate = (newBuildPostWeeklySavingsOverride !== null && w >= w_build)
+        ? newBuildPostWeeklySavingsOverride
+        : inputs.weeklySavings;
+
+      let remainingSavings = currentActiveSavingsRate + extraWeeklyIncomeInThisWeek + fhFreedUp + fernFreedUp;
 
       // Pay off new loans weekly repayments
       let totalNewLoansRepayment = 0;
@@ -1614,6 +1655,18 @@ export default function App() {
         totalNewLoansOffset += l.offset;
       });
 
+      historyStateAtWeek.set(w, {
+        fhLoan: Math.round(simLoanFH),
+        fhOffset: Math.round(simOffsetFH),
+        fernLoan: Math.round(simLoanFern),
+        fernOffset: Math.round(simOffsetFern),
+        nbLoan: Math.round(simLoanNewBuild),
+        nbOffset: Math.round(simOffsetNewBuild),
+        otherLoan: Math.round(totalNewLoansPrincipal),
+        otherOffset: Math.round(totalNewLoansOffset),
+        extraCash: Math.round(simExtraCashSavings),
+      });
+
       if (w % 13 === 0 || w === 30 * 52) {
         const tVal = w / 52;
         const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
@@ -1664,6 +1717,62 @@ export default function App() {
         fhOffset: Math.round(simOffsetFH),
         fernLoan: Math.round(simLoanFern),
         fernOffset: Math.round(simOffsetFern),
+        week: 30 * 52,
+      };
+    }
+
+    let lastNetDebtWeek = -1;
+    for (let w = 0; w <= 30 * 52; w++) {
+      const state = historyStateAtWeek.get(w);
+      if (state) {
+        const debt = state.fhLoan + state.fernLoan + state.nbLoan + state.otherLoan;
+        const offset = state.fhOffset + state.fernOffset + state.nbOffset + state.otherOffset + state.extraCash;
+        if (debt > offset) {
+          lastNetDebtWeek = w;
+        }
+      }
+    }
+
+    if (lastNetDebtWeek === -1) {
+      activeFullyOffsetWeek = 0;
+    } else if (lastNetDebtWeek < 30 * 52) {
+      activeFullyOffsetWeek = lastNetDebtWeek + 1;
+    } else {
+      activeFullyOffsetWeek = -1;
+    }
+
+    if (activeFullyOffsetWeek !== -1) {
+      const state = historyStateAtWeek.get(activeFullyOffsetWeek);
+      if (state) {
+        milestoneActiveFullyOffset = {
+          fhLoan: state.fhLoan,
+          fhOffset: state.fhOffset,
+          fernLoan: state.fernLoan,
+          fernOffset: state.fernOffset,
+          nbLoan: state.nbLoan,
+          nbOffset: state.nbOffset,
+          otherLoan: state.otherLoan,
+          otherOffset: state.otherOffset,
+          week: activeFullyOffsetWeek,
+        };
+      }
+    } else {
+      let finalOtherLoan = 0;
+      let finalOtherOffset = 0;
+      activeNewLoans.forEach((l) => {
+        finalOtherLoan += l.principal;
+        finalOtherOffset += l.offset;
+      });
+
+      milestoneActiveFullyOffset = {
+        fhLoan: Math.round(simLoanFH),
+        fhOffset: Math.round(simOffsetFH),
+        fernLoan: Math.round(simLoanFern),
+        fernOffset: Math.round(simOffsetFern),
+        nbLoan: Math.round(simLoanNewBuild),
+        nbOffset: Math.round(simOffsetNewBuild),
+        otherLoan: Math.round(finalOtherLoan),
+        otherOffset: Math.round(finalOtherOffset),
         week: 30 * 52,
       };
     }
@@ -1958,9 +2067,15 @@ export default function App() {
       milestoneRecast,
       milestoneFHOffset,
       milestoneFernOffset,
+      milestoneActiveFullyOffset,
       fhInterestAtOffset,
       fernInterestAtBothOffset,
       combinedInterestAtBothOffset: fhInterestAtBothOffset + fernInterestAtBothOffset,
+      fhInterestAtActiveFullyOffset,
+      fernInterestAtActiveFullyOffset,
+      nbInterestAtActiveFullyOffset,
+      newLoansInterestAtActiveFullyOffset,
+      combinedInterestAtActiveFullyOffset: fhInterestAtActiveFullyOffset + fernInterestAtActiveFullyOffset + nbInterestAtActiveFullyOffset + newLoansInterestAtActiveFullyOffset,
       fhNeutralizedWeek,
       bothNeutralizedWeek,
       fhOffsetYears:
@@ -2014,7 +2129,7 @@ export default function App() {
       baselineFernTotalInterestPaid: bFernTotalInterestPaid,
       baselineTotalInterestPaid: bFhTotalInterestPaid + bFernTotalInterestPaid,
     };
-  }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct]);
+  }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct, newBuildPostWeeklySavingsOverride]);
 
   const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
@@ -2447,19 +2562,18 @@ export default function App() {
 
         <div class="card" style="border-left: 4px solid #14b8a6;">
           <div class="card-title">Years to Complete Portfolio Freedom</div>
-          <div class="kpi">${finances.bothOffsetYears} <span class="kpi-unit">Years</span></div>
+          <div class="kpi">${finances.activeFullyOffsetYears} <span class="kpi-unit">Years</span></div>
           <div class="kpi-interest" style="background:#f0fdfa; border-color:#ccfbf1; color:#0f766e; flex-direction:column; gap:4px;">
             <div style="display:flex; justify-content:space-between;">
-              <span>Fern St Interest Paid:</span>
-              <span class="mono">$${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}</span>
+              <span>Portfolio Interest Paid:</span>
+              <span class="mono">$${Math.round(finances.combinedInterestAtActiveFullyOffset).toLocaleString()}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; border-t: 1px solid #ccfbf1; pt: 4px; margin-top:2px;">
-              <span>Combined Total Paid:</span>
-              <span class="mono">$${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}</span>
+            <div style="font-size:0.75rem; font-weight:normal; color:#475569; margin-top:2px;">
+              Includes Forever Home, Fern St, and New Build construction or custom simulated loans.
             </div>
           </div>
           <div style="font-size:0.75rem; color:#64748b; margin-top:12px;">
-            Both properties fully neutralized and isolated globally.
+            Entire portfolio of modeled properties and construction completely neutralized in offsets.
           </div>
         </div>
       </div>
@@ -2881,11 +2995,11 @@ export default function App() {
                         Complete Portfolio Freedom
                       </span>
                       <p className="text-lg font-bold text-teal-800 mt-2 font-serif leading-tight">
-                        {finances.bothOffsetYears !== "30+" ? (
+                        {finances.activeFullyOffsetYears !== "30+" ? (
                           <>
-                            {finances.bothOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
+                            {finances.activeFullyOffsetYears} <span className="text-xs font-sans font-normal text-stone-500">Years</span>
                             <span className="block text-xs font-sans font-semibold text-stone-700 mt-1">
-                              {getMilestoneDateStr(finances.milestoneFernOffset.week)}
+                              {getMilestoneDateStr(finances.milestoneActiveFullyOffset.week)}
                             </span>
                           </>
                         ) : (
@@ -2894,16 +3008,38 @@ export default function App() {
                       </p>
                     </div>
                     <div className="mt-3 pt-2 border-t border-stone-100 space-y-1 text-[10px] font-serif text-stone-500">
-                      <div className="flex justify-between items-center text-[9.5px]">
-                        <span>Fern St Interest:</span>
-                        <span className="font-mono text-teal-700">
-                          ${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}
+                      <div className="flex justify-between items-center text-[9px] leading-tight">
+                        <span>Forever Home Int:</span>
+                        <span className="font-mono text-stone-700">
+                          ${Math.round(finances.fhInterestAtActiveFullyOffset).toLocaleString()}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center font-bold text-stone-600 border-t border-stone-100/60 pt-0.5">
-                        <span>Total Interest Paid:</span>
+                      <div className="flex justify-between items-center text-[9px] leading-tight">
+                        <span>Fern St Interest:</span>
+                        <span className="font-mono text-teal-750 text-teal-700">
+                          ${Math.round(finances.fernInterestAtActiveFullyOffset).toLocaleString()}
+                        </span>
+                      </div>
+                      {finances.nbInterestAtActiveFullyOffset > 0 && (
+                        <div className="flex justify-between items-center text-[9px] leading-tight">
+                          <span>New Build Interest:</span>
+                          <span className="font-mono text-purple-700">
+                            ${Math.round(finances.nbInterestAtActiveFullyOffset).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {finances.newLoansInterestAtActiveFullyOffset > 0 && (
+                        <div className="flex justify-between items-center text-[9px] leading-tight">
+                          <span>Expense Loans Int:</span>
+                          <span className="font-mono text-amber-700">
+                            ${Math.round(finances.newLoansInterestAtActiveFullyOffset).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center font-bold text-stone-600 border-t border-stone-100/60 pt-0.5 mt-0.5">
+                        <span>Total Portfolio Int:</span>
                         <span className="font-mono text-slate-800">
-                          ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                          ${Math.round(finances.combinedInterestAtActiveFullyOffset).toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -3061,10 +3197,10 @@ export default function App() {
                       Portfolio Offset Freedom
                     </span>
                     <span className="text-2xl font-bold font-serif text-emerald-900 block mt-1">
-                      {finances.bothOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1">Years</span>
-                      {finances.bothOffsetYears !== "30+" && (
+                      {finances.activeFullyOffsetYears} <span className="text-xs font-sans font-medium text-stone-500 mr-1">Years</span>
+                      {finances.activeFullyOffsetYears !== "30+" && (
                         <span className="text-xs font-sans font-medium text-emerald-700 block sm:inline">
-                          ({getMilestoneDateStr(finances.bothNeutralizedWeek)})
+                          ({getMilestoneDateStr(finances.milestoneActiveFullyOffset.week)})
                         </span>
                       )}
                     </span>
@@ -3073,21 +3209,21 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* KPI 2: Consolidated Lifetime Interest Saved */}
+                  {/* KPI 2: Consolidated Lifetime Interest Paid */}
                   {(() => {
-                    const activeTotalInterest = finances.fhTotalInterestPaidSim + finances.fernTotalInterestPaidSim + (newBuildSpend > 0 ? finances.nbTotalInterestPaidSim : 0);
+                    const activeTotalInterest = finances.fhTotalInterestPaidSim + finances.fernTotalInterestPaidSim + (newBuildSpend > 0 ? finances.nbTotalInterestPaidSim : 0) + (finances.activeNewLoansInterestPaid ?? 0);
                     const baselineTotalInterest = finances.baselineTotalInterestPaid ?? 0;
                     const interestSaved = Math.max(0, baselineTotalInterest - activeTotalInterest);
                     return (
                       <div className="bg-blue-50/70 border border-blue-150 p-4 rounded-xl text-center shadow-xs">
                         <span className="text-[10px] text-blue-800 font-bold uppercase tracking-wider block font-sans">
-                          Lifetime Interest Saved
+                          Lifetime Interest Paid
                         </span>
                         <span className="text-2xl font-bold font-serif text-blue-900 block mt-1">
-                          ${Math.round(interestSaved).toLocaleString()}
+                          ${Math.round(activeTotalInterest).toLocaleString()}
                         </span>
                         <span className="text-[10px] text-emerald-700 font-sans block mt-1 font-medium bg-emerald-100/50 py-0.5 px-1.5 rounded-full inline-block">
-                          Active: ${Math.round(activeTotalInterest).toLocaleString()} vs Base: ${Math.round(baselineTotalInterest).toLocaleString()}
+                          Baseline: ${Math.round(baselineTotalInterest).toLocaleString()} (${Math.round(interestSaved).toLocaleString()} saved)
                         </span>
                       </div>
                     );
@@ -6301,37 +6437,59 @@ export default function App() {
 
               {/* KPI CARD 4: TIME TO GLOBAL OFFSET */}
               <div className="bg-white border border-stone-200 p-5 rounded-xl shadow-sm relative overflow-hidden flex flex-col justify-between print-card">
-                <div className="absolute top-0 right-0 p-3 text-stone-100">
-                  <Icons.Shield className="w-8 h-8" />
+                <div className="absolute top-0 right-0 p-3 text-stone-105 opacity-40">
+                  <Icons.Shield className="w-8 h-8 text-stone-300" />
                 </div>
                 <div>
                   <p className="text-xs text-stone-500 font-bold uppercase tracking-wider font-serif">
                     Years to Complete Portfolio Freedom
                   </p>
                   <p className="text-3xl font-bold text-teal-700 mt-3 font-serif">
-                    {finances.bothOffsetYears}{" "}
+                    {finances.activeFullyOffsetYears}{" "}
                     <span className="text-xs font-sans font-normal text-stone-500">
                       Years
                     </span>
                   </p>
-                  <div className="text-[11px] text-stone-600 mt-2 font-serif font-medium bg-teal-50/40 border border-teal-100 rounded-lg px-2.5 py-1.5 space-y-1">
+                  <div className="text-[10.5px] text-stone-605 text-stone-600 mt-2 font-serif font-medium bg-teal-50/40 border border-teal-100 rounded-lg px-2.5 py-1.5 space-y-1">
+                    <div className="flex justify-between gap-4">
+                      <span>Forever Home Int:</span>
+                      <strong className="font-mono text-stone-700">
+                        ${Math.round(finances.fhInterestAtActiveFullyOffset).toLocaleString()}
+                      </strong>
+                    </div>
                     <div className="flex justify-between gap-4">
                       <span>Fern St Interest:</span>
-                      <span className="font-bold font-mono text-teal-800">
-                        ${Math.round(finances.fernInterestAtBothOffset).toLocaleString()}
-                      </span>
+                      <strong className="font-mono text-teal-850 text-teal-700">
+                        ${Math.round(finances.fernInterestAtActiveFullyOffset).toLocaleString()}
+                      </strong>
                     </div>
-                    <div className="flex justify-between gap-4 pt-1 border-t border-teal-100/50">
+                    {finances.nbInterestAtActiveFullyOffset > 0 && (
+                      <div className="flex justify-between gap-4">
+                        <span>New Build Interest:</span>
+                        <strong className="font-mono text-purple-700">
+                          ${Math.round(finances.nbInterestAtActiveFullyOffset).toLocaleString()}
+                        </strong>
+                      </div>
+                    )}
+                    {finances.newLoansInterestAtActiveFullyOffset > 0 && (
+                      <div className="flex justify-between gap-4">
+                        <span>Expense Loans Int:</span>
+                        <strong className="font-mono text-amber-700">
+                          ${Math.round(finances.newLoansInterestAtActiveFullyOffset).toLocaleString()}
+                        </strong>
+                      </div>
+                    )}
+                    <div className="flex justify-between gap-4 pt-1 border-t border-teal-100/50 mt-1 font-bold">
                       <span>Combined Total:</span>
                       <span className="font-bold font-mono text-slate-800">
-                        ${Math.round(finances.combinedInterestAtBothOffset).toLocaleString()}
+                        ${Math.round(finances.combinedInterestAtActiveFullyOffset).toLocaleString()}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="text-[10px] text-stone-400 border-t border-stone-100 pt-3 mt-3 font-serif leading-relaxed">
-                  Both properties completely isolated and net debt-free globally
-                  across your entire life footprint.
+                  Entire portfolio of modeled properties and construction completely isolated and net debt-free globally
+                  across your entire footprint.
                 </div>
               </div>
             </div>
@@ -6595,38 +6753,67 @@ export default function App() {
               </div>
             </div>
 
-            {/* CARD 3: FERN ST OFFSET */}
+            {/* CARD 3: PORTFOLIO FREEDOM */}
             <div className="bg-teal-50/50 p-4 rounded-xl border border-teal-150 shadow-sm flex flex-col justify-between space-y-3">
-              <span className="text-[11px] uppercase font-bold tracking-wider text-teal-950 block font-serif border-b border-teal-205 border-teal-200 pb-1.5">
-                {finances.bothOffsetYears !== "30+" ? `Fern Offset — ${getMilestoneDateStr(finances.milestoneFernOffset.week)}` : `Fern Offset — 30+ Years`}
+              <span className="text-[11px] uppercase font-bold tracking-wider text-teal-955 block font-serif border-b border-teal-200 pb-1.5">
+                {finances.activeFullyOffsetYears !== "30+" ? `Portfolio Freedom — ${getMilestoneDateStr(finances.milestoneActiveFullyOffset.week)}` : `Portfolio Freedom — 30+ Years`}
               </span>
               <div className="space-y-2 text-xs font-serif flex-1 flex flex-col justify-between">
-                <div className="space-y-2">
-                  <div className="bg-white p-2.5 rounded border border-teal-100 flex justify-between items-center">
+                <div className="space-y-2 select-none overflow-y-auto max-h-[220px]">
+                  <div className="bg-white p-2 border border-teal-100/60 rounded flex justify-between items-center gap-1.5">
                     <div>
                       <span className="font-bold block text-teal-950">Forever Home Residence</span>
-                      <span className="text-[9px] text-teal-600 font-medium font-semibold">Fully Neutralized ✓</span>
+                      <span className="text-[9.5px] text-teal-600 font-medium">Fully Neutralized ✓</span>
                     </div>
-                    <div className="text-right font-mono text-[10.5px]">
-                      <div className="text-stone-400 line-through">Loan: ${finances.milestoneFernOffset.fhLoan.toLocaleString()}</div>
-                      <div className="text-emerald-700 font-bold">Offset: ${finances.milestoneFernOffset.fhOffset.toLocaleString()}</div>
+                    <div className="text-right font-mono text-[10px]">
+                      <div className="text-stone-400 line-through">Loan: ${finances.milestoneActiveFullyOffset.fhLoan.toLocaleString()}</div>
+                      <div className="text-emerald-700 font-bold font-semibold">Offset: ${finances.milestoneActiveFullyOffset.fhOffset.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div className="bg-white p-2.5 rounded border border-teal-100 flex justify-between items-center">
+                  <div className="bg-white p-2 border border-teal-100/60 rounded flex justify-between items-center gap-1.5">
                     <div>
-                      <span className="font-bold block text-teal-950 font-bold">Fern St Property</span>
-                      <span className="text-[9px] text-teal-600 font-medium font-semibold">Fully Neutralized ✓</span>
+                      <span className="font-bold block text-teal-950 leading-tight">Fern St Property</span>
+                      <span className="text-[9.5px] text-teal-600 font-medium">Fully Neutralized ✓</span>
                     </div>
-                    <div className="text-right font-mono text-[10.5px]">
-                      <div className="text-stone-400 line-through">Loan: ${finances.milestoneFernOffset.fernLoan.toLocaleString()}</div>
-                      <div className="text-emerald-700 font-bold">Offset: ${finances.milestoneFernOffset.fernOffset.toLocaleString()}</div>
+                    <div className="text-right font-mono text-[10px]">
+                      <div className="text-stone-400 line-through">Loan: ${finances.milestoneActiveFullyOffset.fernLoan.toLocaleString()}</div>
+                      <div className="text-emerald-700 font-bold font-semibold">Offset: ${finances.milestoneActiveFullyOffset.fernOffset.toLocaleString()}</div>
                     </div>
                   </div>
+                  {finances.milestoneActiveFullyOffset.nbLoan > 0 && (
+                    <div className="bg-white p-2 border border-teal-100/60 rounded flex justify-between items-center gap-1.5">
+                      <div>
+                        <span className="font-bold block text-teal-950">New Build Loan</span>
+                        <span className="text-[9.5px] text-teal-600 font-medium">Fully Neutralized ✓</span>
+                      </div>
+                      <div className="text-right font-mono text-[10px]">
+                        <div className="text-stone-400 line-through">Loan: ${finances.milestoneActiveFullyOffset.nbLoan.toLocaleString()}</div>
+                        <div className="text-emerald-700 font-bold font-semibold">Offset: ${finances.milestoneActiveFullyOffset.nbOffset.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  )}
+                  {finances.milestoneActiveFullyOffset.otherLoan > 0 && (
+                    <div className="bg-white p-2 border border-teal-100/60 rounded flex justify-between items-center gap-1.5">
+                      <div>
+                        <span className="font-bold block text-teal-950">Other Expense Loans</span>
+                        <span className="text-[9.5px] text-teal-600 font-medium">Fully Neutralized ✓</span>
+                      </div>
+                      <div className="text-right font-mono text-[10px]">
+                        <div className="text-stone-400 line-through">Loan: ${finances.milestoneActiveFullyOffset.otherLoan.toLocaleString()}</div>
+                        <div className="text-emerald-700 font-bold font-semibold">Offset: ${finances.milestoneActiveFullyOffset.otherOffset.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="bg-teal-100/50 p-2 rounded text-[10px] font-sans font-bold text-teal-950 flex justify-between items-center">
                   <span>Net Portfolio Debt:</span>
                   <span className="font-mono text-xs">
-                    ${(finances.milestoneFernOffset.fhLoan - finances.milestoneFernOffset.fhOffset + (finances.milestoneFernOffset.fernLoan - finances.milestoneFernOffset.fernOffset)).toLocaleString()}
+                    ${(
+                      (finances.milestoneActiveFullyOffset.fhLoan - finances.milestoneActiveFullyOffset.fhOffset) +
+                      (finances.milestoneActiveFullyOffset.fernLoan - finances.milestoneActiveFullyOffset.fernOffset) +
+                      (finances.milestoneActiveFullyOffset.nbLoan - finances.milestoneActiveFullyOffset.nbOffset) +
+                      (finances.milestoneActiveFullyOffset.otherLoan - finances.milestoneActiveFullyOffset.otherOffset)
+                    ).toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -6902,10 +7089,9 @@ export default function App() {
               With your chosen internal variation allocation, your Forever Home
               becomes **100% Interest-Free and Fully Offset by Year{" "}
               {finances.fhOffsetYears}**. Once neutralized, your cumulative State
-              cash velocity instantly redirects into the **Fern Street Holiday
-              House Offset**, wiping out your remaining debt exposure globally
+              cash velocity instantly redirects into the remaining loans, wiping out your remaining debt exposure globally
               to achieve **complete portfolio freedom in Year{" "}
-              {finances.bothOffsetYears}**.
+              {finances.activeFullyOffsetYears}**.
             </p>
           </div>
         </section>
@@ -8466,18 +8652,18 @@ export default function App() {
 
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* BOX 1: CORE DEBT NEUTRALIZATION (FOREVER HOME & FERN ST) */}
+                      {/* BOX 1: PORTFOLIO DEBT NEUTRALIZATION (ALL ACTIVE LOANS) */}
                       <div className="bg-blue-50/40 p-4 rounded-xl border border-blue-150 shadow-sm flex flex-col justify-between space-y-2.5">
                         <div>
                           <span className="text-[10px] uppercase font-bold tracking-wider text-blue-900 block font-serif border-b border-blue-200/50 pb-1.5 mb-2">
-                            Core Debt Neutralization
+                            Portfolio Debt Neutralization
                           </span>
                           <div className="text-xs font-serif leading-relaxed text-stone-700 space-y-2">
                             <div>
                               Status:{" "}
-                              {finances.bothNeutralizedWeek !== -1 ? (
+                              {finances.activeFullyOffsetWeek !== -1 ? (
                                 <span className="text-emerald-700 font-extrabold font-sans">
-                                  Achieved in {getMilestoneDateStr(finances.bothNeutralizedWeek)}
+                                  Achieved in {getMilestoneDateStr(finances.activeFullyOffsetWeek)}
                                 </span>
                               ) : (
                                 <span className="text-rose-700 font-bold font-sans">
@@ -8486,9 +8672,9 @@ export default function App() {
                               )}
                             </div>
                             <p className="text-[11px] text-stone-600">
-                              When Forever Home and Fern Street mortgages are both 100% neutralized by your offsets. 
-                              {finances.bothNeutralizedWeek !== -1 ? (
-                                ` This is projected to occur in Yr ${finances.bothOffsetYears} under the current setting of $${inputs.weeklySavings.toLocaleString()}/wk savings.`
+                              When all mortgages and simulated loans in your active portfolio are 100% neutralized by offsets.
+                              {finances.activeFullyOffsetWeek !== -1 ? (
+                                ` This is projected to occur in Yr ${finances.activeFullyOffsetYears} under the current setting of $${inputs.weeklySavings.toLocaleString()}/wk savings.`
                               ) : (
                                 " Increasing your weekly savings rate or routing sale proceeds would pull this timeline forward."
                               )}
@@ -8557,13 +8743,21 @@ export default function App() {
                               </strong>
                             </div>
                             {nlFullyOffsetWeek !== -1 && (
-                              <div className="flex justify-between font-serif">
+                              <div className="flex justify-between border-b border-dashed border-stone-200/60 pb-1 font-serif">
                                 <span>Other Loans:</span>
                                 <strong className="text-stone-800">
                                   {getMilestoneDateStr(nlFullyOffsetWeek)} (Yr {(nlFullyOffsetWeek / 52).toFixed(1)})
                                 </strong>
                               </div>
                             )}
+                            <div className="flex justify-between font-serif pt-1 bg-teal-150/20 px-1 border border-teal-200 rounded font-bold">
+                              <span>Portfolio Freedom:</span>
+                              <span className="text-teal-900">
+                                {finances.activeFullyOffsetWeek !== -1
+                                  ? `${getMilestoneDateStr(finances.activeFullyOffsetWeek)} (Yr ${finances.activeFullyOffsetYears})`
+                                  : "30+ Years"}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
