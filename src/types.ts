@@ -35,6 +35,13 @@ export interface PropertyInputs {
   merylRenoCost: number;
   paulanRenoCost: number;
   fhRenoMovingCost: number;
+  paulanStrategy?: "sell" | "rent";
+  paulanWeeklyRent?: number;
+  paulanWeeklyExpenses?: number;
+  annualInflationRate?: number;
+  paulanSellLater?: boolean;
+  paulanYearsBeforeSale?: number;
+  paulanGrowthRate?: number;
 }
 
 export interface PropertyScenario {
@@ -56,6 +63,8 @@ export interface SimulationDataPoint {
   offsetFH: number;
   loanFern: number;
   offsetFern: number;
+  loanPaulan?: number;
+  offsetPaulan?: number;
   newLoansPayable?: number;
   newLoansOffset?: number;
   newBuildLoan?: number;

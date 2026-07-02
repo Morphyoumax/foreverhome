@@ -1,4 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useSimulationEngine } from "./hooks/useSimulationEngine";
+import { TimelineView } from "./components/TimelineView";
+import { ScenarioControls } from "./components/ScenarioControls";
 import {
   PropertyInputs,
   PropertyScenario,
@@ -7,6 +10,13 @@ import {
   FutureExpense,
   FutureIncome,
 } from "./types";
+import {
+  ACCOUNT_BALANCES,
+  DEFAULT_INPUTS,
+  adjustInputs,
+  TIMELINE_KEYS,
+  DECIDED_PROPERTY_ADDRESS,
+} from "./constants/defaults";
 
 const Icons = {
   Farm: ({ className = "w-5 h-5" }: { className?: string }) => (
@@ -240,112 +250,6 @@ const Icons = {
 };
 
 // Stated Financial Position as of May 27, 2026
-const ACCOUNT_BALANCES = {
-  fernLoan: 573073,
-  paulansLoan: 381446,
-  fernOffset: 238374,
-  paulansOffset: 381456,
-};
-
-const DEFAULT_INPUTS: PropertyInputs = {
-  purchasePrice: 1700000,          // Default Forever Home purchase price
-  paulanSalePrice: 740000,         // Locked Paulan Court purchase/sale price
-  merylSalePrice: 730000,          // Twin Ranges gross sale price
-  merylContribution: 700000,       // Meryl's Granny Flat cash injection (post-settlement)
-  paulanOffsetPulled: 381456,      // Programmatic (read-only indicator fallback)
-  fernOffsetPulled: 238374,        // Programmatic (read-only indicator fallback)
-  offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
-  weeklySavings: 0,                // Extra savings allocated to offset weekly
-  interestRate: 6.15,              // Variable loan rate
-  
-  // Parallel timeline delays
-  merylStartDelay: 0,              // Timeline start
-  merylPrepDays: 90,               // Default 90 days ending in mid-August
-  merylCampaignDays: 45,           // Listed for sale campaign (average time on market)
-  merylSettleDays: 60,             // Twin Ranges settlement period
-  
-  fhStartDelay: 151,               // Independent contract sign / prep delay to set Oct 13th start
-  fhSettleDays: 60,                // Settlement on Forever Home
-  renoDays: 30,                    // Renovation period
-  moveDays: 7,                     // Move-in duration
-  
-  paulanStartDelay: 248,           // Shifted to start immediately after the move event in Swimlane B concludes
-  paulanPrepDays: 7,               // Paulan prep duration
-  paulanCampaignDays: 28,          // Paulan marketing
-  paulanSettleDays: 60,            // Settlement period on selling Paulan Court
-  
-  internalVariationPct: 50,        // 0% = Keep all post-sale cash in Offset, 100% = Pay down Loan Principal (Recast)
-  depletionPriorityToggle: "paulan", // Default priority
-  stampDutyRate: 5.5,              // Stamp Duty / purchase cost percent (defaults to Victoria 5.5%)
-  
-  merylRentCostPerWeek: 150,       // Out of pocket renting cost for Meryl per week
-  merylRentingExtraDays: 0,        // Extra rental period extensions
-  recastTriggerEvent: "gfi",       // Default recast trigger event
-  merylRentStartOffset: 0,
-  gfiStartOffset: 1,               // GFI default scheduled offset is 1 day after Twin Ranges settlement finalizes
-  merylRenoCost: 0,
-  paulanRenoCost: 10000,
-  fhRenoMovingCost: 10000,
-};
-
-// Helper to consolidate, clamp and adjust financial parameters dynamically in response to slider changes
-const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
-  const rate = (newInputs.stampDutyRate ?? 5.5) / 100;
-  const stampDuty = newInputs.purchasePrice * rate;
-  const totalAcquisitionCost = newInputs.purchasePrice + stampDuty + 5000;
-  const minCashRequiredForSettlement = Math.max(0, totalAcquisitionCost - 1500000);
-
-  // Dynamic merylNetProceeds clamping
-  const merylSale = newInputs.merylSalePrice ?? 730000;
-  const merylNet = Math.max(0, merylSale - (merylSale * 0.025) - (newInputs.merylRenoCost ?? 0));
-  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 700000));
-
-  // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
-  const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 90) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
-  const gfiStart = merylSettleEnd + (newInputs.gfiStartOffset ?? 1);
-  const fhSettleEnd = (newInputs.fhStartDelay ?? 110) + (newInputs.fhSettleDays ?? 60);
-  const gfiBeforeFHSettle = gfiStart <= fhSettleEnd;
-
-  const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? merylContribution : 0);
-
-  // Dynamic maximum buffer clamp (starting balance minus mandatory settlement outlay)
-  const maxRemainingCash = Math.max(0, startingCashAtFHSettle - minCashRequiredForSettlement);
-  const buffer = Math.min(maxRemainingCash, Math.max(0, newInputs.offsetBuffer));
-
-  return {
-    ...newInputs,
-    merylSalePrice: merylSale,
-    merylContribution: merylContribution,
-    stampDutyRate: newInputs.stampDutyRate ?? 5.5,
-    offsetBuffer: buffer,
-    merylRentCostPerWeek: newInputs.merylRentCostPerWeek ?? 150,
-    merylRentingExtraDays: newInputs.merylRentingExtraDays ?? 0,
-    recastTriggerEvent: newInputs.recastTriggerEvent ?? "gfi",
-    merylRentStartOffset: newInputs.merylRentStartOffset ?? 0,
-    gfiStartOffset: newInputs.gfiStartOffset ?? 1,
-    merylRenoCost: newInputs.merylRenoCost ?? 0,
-    paulanRenoCost: newInputs.paulanRenoCost ?? 10000,
-    fhRenoMovingCost: newInputs.fhRenoMovingCost ?? 10000,
-  };
-};
-
-const TIMELINE_KEYS: (keyof PropertyInputs)[] = [
-  "merylStartDelay",
-  "merylPrepDays",
-  "merylCampaignDays",
-  "merylSettleDays",
-  "fhStartDelay",
-  "fhSettleDays",
-  "renoDays",
-  "moveDays",
-  "paulanStartDelay",
-  "paulanPrepDays",
-  "paulanCampaignDays",
-  "paulanSettleDays",
-  "merylRentingExtraDays",
-  "merylRentStartOffset",
-  "gfiStartOffset"
-];
 
 export default function App() {
   const [inputs, setInputs] = useState<PropertyInputs>(() =>
@@ -373,93 +277,30 @@ export default function App() {
     }
     return [
       {
-        name: "Default Strategy ($1.7M)",
+        name: "Decided Property ($1.07M)",
         inputs: adjustInputs(DEFAULT_INPUTS),
       },
       {
-        name: "Conservative Build ($1.4M)",
-        inputs: adjustInputs({ ...DEFAULT_INPUTS, purchasePrice: 1400000 }),
+        name: "Under Budget ($950k)",
+        inputs: adjustInputs({ ...DEFAULT_INPUTS, purchasePrice: 950000 }),
       },
       {
-        name: "Premium Estate ($1.9M)",
-        inputs: adjustInputs({ ...DEFAULT_INPUTS, purchasePrice: 1900000 }),
-      },
-    ];
-  });
-
-  const [timelineScenarios, setTimelineScenarios] = useState<PropertyScenario[]>(() => {
-    try {
-      const saved = localStorage.getItem("property_scenarios_v10_timeline");
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          return list.map((sc: any) => ({
-            name: sc.name,
-            inputs: adjustInputs({
-              ...DEFAULT_INPUTS,
-              ...sc.inputs,
-            })
-          }));
-        }
-      }
-    } catch {
-      // standard fallback below
-    }
-    return [
-      {
-        name: "Sell Twin Ranges before Forever Settles",
-        inputs: adjustInputs({
-          ...DEFAULT_INPUTS,
-          merylStartDelay: 0,
-          merylPrepDays: 60,
-          merylCampaignDays: 30,
-          merylSettleDays: 60,
-          fhStartDelay: 110,
-          fhSettleDays: 60,
-        }),
-      },
-      {
-        name: "Moving House in Jan",
-        inputs: adjustInputs({
-          ...DEFAULT_INPUTS,
-          fhStartDelay: 155,
-        }),
+        name: "Slight Premium ($1.2M)",
+        inputs: adjustInputs({ ...DEFAULT_INPUTS, purchasePrice: 1200000 }),
       },
     ];
   });
 
   const [newScenarioName, setNewScenarioName] = useState("");
-  const [newTimelineScenarioName, setNewTimelineScenarioName] = useState("");
-  const [activeInteraction, setActiveInteraction] = useState<ActiveInteraction | null>(null);
   const [isPaulanLinkedHovered, setIsPaulanLinkedHovered] = useState(false);
-  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "mortgage" | "settles" | "propertyResearch" | "futureExpenses">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "timeline" | "mortgage" | "settles" | "futureExpenses" | "paulan">("overview");
   const [trajectoryTableMode, setTrajectoryTableMode] = useState<"key" | "all">("key");
   const [trajectorySearch, setTrajectorySearch] = useState("");
-  const [researchUrlOrAddress, setResearchUrlOrAddress] = useState("");
-  const [researchLoading, setResearchLoading] = useState(false);
-  const [researchError, setResearchError] = useState<string | null>(null);
-  const [customGeminiApiKey, setCustomGeminiApiKey] = useState(() => localStorage.getItem("custom_gemini_api_key") || "");
-  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
   const [overviewNotes, setOverviewNotes] = useState(() => localStorage.getItem("overview_notes") || "");
-
-  useEffect(() => {
-    localStorage.setItem("custom_gemini_api_key", customGeminiApiKey);
-  }, [customGeminiApiKey]);
 
   useEffect(() => {
     localStorage.setItem("overview_notes", overviewNotes);
   }, [overviewNotes]);
-
-  const [researchReport, setResearchReport] = useState<{
-    address: string;
-    estimatedPrice: number;
-    landSize: string;
-    keyFeatures: string[];
-    description: string;
-    isFallback?: boolean;
-  } | null>(null);
-  const [researchSources, setResearchSources] = useState<{ title: string; uri: string }[]>([]);
-  const [useSearch, setUseSearch] = useState<boolean>(false);
 
   const [futureExpenses, setFutureExpenses] = useState<FutureExpense[]>(() => {
     try {
@@ -612,57 +453,7 @@ export default function App() {
     }
   }, [newBuildDrawChoicePct]);
 
-  const handleApplyEstimatedPrice = () => {
-    if (researchReport && typeof researchReport.estimatedPrice === "number") {
-      handleInputChange("purchasePrice", researchReport.estimatedPrice);
-    }
-  };
 
-  const handleGeneratePropertyReport = async () => {
-    if (!researchUrlOrAddress.trim()) {
-      setResearchError("Please enter a valid property address or realestate.com.au link.");
-      return;
-    }
-    setResearchLoading(true);
-    setResearchError(null);
-    setResearchReport(null);
-    setResearchSources([]);
-    
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (customGeminiApiKey.trim()) {
-        headers["X-Custom-Gemini-Key"] = customGeminiApiKey.trim();
-      }
-
-      const response = await fetch("/api/generate-property-report", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ 
-          urlOrAddress: researchUrlOrAddress.trim(),
-          useSearch: useSearch
-        }),
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to generate property research report.");
-      }
-      
-      if (data.report) {
-        setResearchReport(data.report);
-      }
-      if (data.sources) {
-        setResearchSources(data.sources);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setResearchError(err.message || "An unexpected error occurred while generating the report. Make sure your server is running.");
-    } finally {
-      setResearchLoading(false);
-    }
-  };
-
-  const ganttContainerRef = useRef<HTMLDivElement | null>(null);
 
   const WeeklyNetSalary = 5303.35; // Locked family salary split
 
@@ -673,21 +464,6 @@ export default function App() {
       console.warn("Storage exception handled cleanly.", e);
     }
   }, [financialScenarios]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("property_scenarios_v10_timeline", JSON.stringify(timelineScenarios));
-    } catch (e) {
-      console.warn("Storage exception handled cleanly.", e);
-    }
-  }, [timelineScenarios]);
-
-  // Helper function to calculate a calendar date from a day offset
-  const getGanttDateStr = (days: number) => {
-    const d = new Date(2026, 4, 15); // May 15, 2026
-    d.setDate(d.getDate() + days);
-    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-  };
 
   // Helper to format simulation weeks into clear Month Year calendar blocks
   const getMilestoneDateStr = (weekNum: number) => {
@@ -833,1303 +609,17 @@ export default function App() {
   }, [inputs]);
 
   // Dynamic Constraints and Financial Modelling Engine
-  const finances = useMemo(() => {
-    // Dynamically selected purchase cost calculation, default is Victoria 5.5%
-    const rate = (inputs.stampDutyRate ?? 5.5) / 100;
-    const stampDuty = inputs.purchasePrice * rate;
-    const transactionCosts = 5000;
-    const totalAcquisitionCost =
-      inputs.purchasePrice + stampDuty + transactionCosts;
-
-    // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
-    const gfiBeforeFHSettle = timeline.gfiStart <= timeline.fhSettleEnd;
-    const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
-
-    // Absolute physical upper bound limits based on maximum borrowing facility and cash offsets using rate
-    const maxAffordablePrice = Math.floor((1500000 - 5000 + startingCashAtFHSettle) / (1 + rate));
-
-    // Mandatory cash gap representing settlement friction above the maximum borrowing capacity
-    const minCashRequiredForSettlement = Math.max(
-      0,
-      totalAcquisitionCost - 1500000
-    );
-
-    // Ideal remaining cushion buffer: we want to preserve inputs.offsetBuffer if possible.
-    // The cash we can deploy: starting cash minus the buffer.
-    const idealPull = Math.max(0, startingCashAtFHSettle - inputs.offsetBuffer);
-
-    // The actual cash we must pull on Day 1 is the larger of the minimum needed to settle and what we choose to pull
-    let actualPull = Math.max(minCashRequiredForSettlement, idealPull);
-
-    // If actualPull exceeds our physical starting cash constraint, then the purchase is unaffordable.
-    // We clamp actualPull to starting cash.
-    actualPull = Math.min(startingCashAtFHSettle, actualPull);
-
-    // Programmatic Waterfall for the starting offsets based on user-selectable priority toggle:
-    let paulanOffsetPulled = 0;
-    let fernOffsetPulled = 0;
-
-    const maxFernOffsetAvailable = 238374 + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
-
-    if (inputs.depletionPriorityToggle === "paulan") {
-      paulanOffsetPulled = Math.min(381456, actualPull);
-      fernOffsetPulled = Math.min(maxFernOffsetAvailable, Math.max(0, actualPull - paulanOffsetPulled));
-    } else {
-      fernOffsetPulled = Math.min(maxFernOffsetAvailable, actualPull);
-      paulanOffsetPulled = Math.min(381456, Math.max(0, actualPull - fernOffsetPulled));
-    }
-
-    const totalOffsetsPulled = paulanOffsetPulled + fernOffsetPulled;
-
-    // Dynamic cap on loan: Cannot exceed $1,500,000 concurrent lender limit
-    const loanRequired = Math.min(
-      1500000,
-      Math.max(0, totalAcquisitionCost - totalOffsetsPulled)
-    );
-
-    // 20% Deposit of Loan Value targeting standard bank constraints
-    const targetDeposit20PctOfLoan = loanRequired * 0.2;
-
-    // Remaining Day 1 cash cushion left over (total starting cash is startingCashAtFHSettle minus actual cash paid out)
-    const remainingDay1CashCushion = Math.max(
-      0,
-      startingCashAtFHSettle - (totalAcquisitionCost - loanRequired)
-    );
-
-    // Strategy Validation: Remaining buffer target safety check
-    const isBufferCompromised = remainingDay1CashCushion < inputs.offsetBuffer;
-
-    // Model transition interest on existing loans since offsets were pulled:
-    const paulanTransitionInterestRateWeekly = 0.0618 / 52;
-    const fernTransitionInterestRateWeekly = 0.0615 / 52;
-
-    const paulanWeeksToSale = Math.max(1, Math.round(timeline.paulanSettleEnd / 7));
-    const totalTransitionInterestPaulan =
-      paulanOffsetPulled *
-      paulanTransitionInterestRateWeekly *
-      paulanWeeksToSale;
-    const totalTransitionInterestFern =
-      fernOffsetPulled *
-      fernTransitionInterestRateWeekly *
-      paulanWeeksToSale;
-    const aggregateTransitionInterest =
-      totalTransitionInterestPaulan + totalTransitionInterestFern;
-
-    // Paulan Court Net proceeds of sale calculation with dynamic sale price
-    const paulanSale = inputs.paulanSalePrice ?? 740000;
-    const sellingCosts = paulanSale * 0.025; // 2.5% fixed commissions & legals
-    const paulanNetProceeds = Math.max(
-      0,
-      paulanSale - ACCOUNT_BALANCES.paulansLoan - sellingCosts - (inputs.paulanRenoCost ?? 10000)
-    );
-
-    // Meryl's Twin Ranges sale details with dynamic sale price
-    const merylGrossProceeds = inputs.merylSalePrice ?? 730000;
-    const merylSellingFees = merylGrossProceeds * 0.025; // 2.5% standard commissions, marketing, conveyancing, legals
-    const merylNetProceeds = Math.max(
-      0,
-      merylGrossProceeds - merylSellingFees - (inputs.merylRenoCost ?? 0)
-    );
-    const merylCashSurplus = Math.max(0, merylNetProceeds - inputs.merylContribution);
-
-    // Post-Settlement Liquid Injection Pool: Include both remaining day 1 cash cushion and post-sale cash
-    const totalPostSaleCashPool = paulanNetProceeds + (gfiBeforeFHSettle ? 0 : inputs.merylContribution);
-    const totalCombinedPool = remainingDay1CashCushion + totalPostSaleCashPool;
-
-    // Internal Variation Split:
-    const variationPct = inputs.internalVariationPct / 100;
-    const appliedToPrincipalReduction = Math.min(
-      loanRequired,
-      totalCombinedPool * variationPct
-    );
-    const keptInOffsetAccount = Math.max(
-      0,
-      totalCombinedPool - appliedToPrincipalReduction - (inputs.fhRenoMovingCost ?? 10000)
-    );
-
-    // Post-Variation Stabilized Mortgage State
-    const recastForeverHomeLoanPrincipal = Math.max(
-      0,
-      loanRequired - appliedToPrincipalReduction
-    );
-
-    // Total cash remaining in Offset = kept inside Offset Account (which includes the Day 1 cushion)
-    const recastOffsetBalance = keptInOffsetAccount;
-    const surplusCashRedirectedToFern = Math.max(
-      0,
-      recastOffsetBalance - recastForeverHomeLoanPrincipal
-    );
-
-    // Calculate Recast Weekly P&I Repayments on the lower principal
-    const rWeekly = inputs.interestRate / 100 / 52;
-    const nWeeks = 30 * 52;
-
-    const recastWeeklyPayment =
-      recastForeverHomeLoanPrincipal > 0
-        ? (recastForeverHomeLoanPrincipal *
-            rWeekly *
-            Math.pow(1 + rWeekly, nWeeks)) /
-          (Math.pow(1 + rWeekly, nWeeks) - 1)
-        : 0;
-
-    const initialWeeklyPayment =
-      loanRequired > 0
-        ? (loanRequired * rWeekly * Math.pow(1 + rWeekly, nWeeks)) /
-          (Math.pow(1 + rWeekly, nWeeks) - 1)
-        : 0;
-
-    // Calculate Fern St variable repayment (base rate 5.95%)
-    const fernWeeklyPayment = 783.74;
-
-    // Standard Cash Flow Ratios
-    const totalCommittedWeeklyOutlays = recastWeeklyPayment + fernWeeklyPayment;
-    const mortgageToIncomeRatio =
-      (totalCommittedWeeklyOutlays / WeeklyNetSalary) * 100;
-    const mortgageWithSavingsStrainRatio =
-      ((totalCommittedWeeklyOutlays + inputs.weeklySavings) / WeeklyNetSalary) * 100;
-    const leftoverDiscretionaryCash =
-      WeeklyNetSalary - totalCommittedWeeklyOutlays - inputs.weeklySavings;
-
-    // PART A: Run Baseline Portfolio Simulation (ignoring future expenses and other incomes)
-    const w_build = Math.round(newBuildTiming * 52);
-    const baselineSimulationData: SimulationDataPoint[] = [];
-    let bSimLoanFH = recastForeverHomeLoanPrincipal;
-    let bSimOffsetFH = recastOffsetBalance;
-    let bSimLoanFern = ACCOUNT_BALANCES.fernLoan;
-    let bSimOffsetFern = 0;
-    let bSimExtraCashSavings = 0;
-
-    let baselineFhNeutralizedWeek = -1;
-    let baselineBothNeutralizedWeek = -1;
-    let baselineHalfOffsetWeek = -1;
-    let baselineFullyOffsetWeek = -1;
-
-    let bFhTotalInterestPaid = 0;
-    let bFernTotalInterestPaid = 0;
-
-    let bMilestoneFHOffset = {
-      fhLoan: 0,
-      fhOffset: 0,
-      fernLoan: 0,
-      fernOffset: 0,
-      week: -1,
-    };
-
-    let bMilestoneFernOffset = {
-      fhLoan: 0,
-      fhOffset: 0,
-      fernLoan: 0,
-      fernOffset: 0,
-      week: -1,
-    };
-
-    const rWeeklyFHSim = rWeekly;
-    const rWeeklyFernSim = 0.0595 / 52;
-
-    for (let w = 0; w <= 30 * 52; w++) {
-      const bTotalDebt = bSimLoanFH + bSimLoanFern;
-      const bTotalOffsets = bSimOffsetFH + bSimOffsetFern + bSimExtraCashSavings;
-      if (w >= w_build && bTotalDebt > 0 && bTotalOffsets >= bTotalDebt * 0.5 && baselineHalfOffsetWeek === -1) {
-        baselineHalfOffsetWeek = w;
-      }
-      const isBaselineFullyOffset = bTotalOffsets >= bTotalDebt || bTotalDebt <= 0;
-      if (isBaselineFullyOffset && baselineFullyOffsetWeek === -1) {
-        baselineFullyOffsetWeek = w;
-      }
-
-      if (bSimOffsetFH >= bSimLoanFH && baselineFhNeutralizedWeek === -1) {
-        baselineFhNeutralizedWeek = w;
-        bMilestoneFHOffset = {
-          fhLoan: Math.round(bSimLoanFH),
-          fhOffset: Math.round(bSimOffsetFH),
-          fernLoan: Math.round(bSimLoanFern),
-          fernOffset: Math.round(bSimOffsetFern),
-          week: w,
-        };
-      }
-      if (
-        bSimOffsetFH >= bSimLoanFH &&
-        bSimOffsetFern >= bSimLoanFern &&
-        baselineBothNeutralizedWeek === -1
-      ) {
-        baselineBothNeutralizedWeek = w;
-        bMilestoneFernOffset = {
-          fhLoan: Math.round(bSimLoanFH),
-          fhOffset: Math.round(bSimOffsetFH),
-          fernLoan: Math.round(bSimLoanFern),
-          fernOffset: Math.round(bSimOffsetFern),
-          week: w,
-        };
-      }
-
-      const fhInterest = Math.max(0, bSimLoanFH - bSimOffsetFH) * rWeeklyFHSim;
-      const fernInterest = Math.max(0, bSimLoanFern - bSimOffsetFern) * rWeeklyFernSim;
-
-      bFhTotalInterestPaid += fhInterest;
-      bFernTotalInterestPaid += fernInterest;
-
-      let actualFhPaymentPaid = 0;
-      let fhPrincipalReduction = 0;
-      if (bSimLoanFH > 0) {
-        fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
-        if (bSimLoanFH - fhPrincipalReduction <= 0) {
-          actualFhPaymentPaid = fhInterest + bSimLoanFH;
-        } else {
-          actualFhPaymentPaid = recastWeeklyPayment;
-        }
-      }
-      bSimLoanFH = Math.max(0, bSimLoanFH - fhPrincipalReduction);
-
-      let actualFernPaymentPaid = 0;
-      let fernPrincipalReduction = 0;
-      if (bSimLoanFern > 0) {
-        fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
-        if (bSimLoanFern - fernPrincipalReduction <= 0) {
-          actualFernPaymentPaid = fernInterest + bSimLoanFern;
-        } else {
-          actualFernPaymentPaid = fernWeeklyPayment;
-        }
-      }
-      bSimLoanFern = Math.max(0, bSimLoanFern - fernPrincipalReduction);
-
-      // Freed up payments from loans completely ended
-      const fhFreedUp = recastWeeklyPayment - actualFhPaymentPaid;
-      const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
-
-      let remainingSavings = inputs.weeklySavings + fhFreedUp + fernFreedUp;
-
-      // Clamping of baseline offsets due to decreasing loan principal
-      let bExcessFromClamping = 0;
-      if (bSimOffsetFH > bSimLoanFH) {
-        bExcessFromClamping += (bSimOffsetFH - bSimLoanFH);
-        bSimOffsetFH = bSimLoanFH;
-      }
-      if (bSimOffsetFern > bSimLoanFern) {
-        bExcessFromClamping += (bSimOffsetFern - bSimLoanFern);
-        bSimOffsetFern = bSimLoanFern;
-      }
-
-      let bCashPool = remainingSavings + bExcessFromClamping;
-
-      // Deposit order: 1. FH Offset, 2. Fern Offset, 3. Extra Cash Savings
-      if (bCashPool > 0 && bSimOffsetFH < bSimLoanFH) {
-        const space = bSimLoanFH - bSimOffsetFH;
-        const deposit = Math.min(bCashPool, space);
-        bSimOffsetFH += deposit;
-        bCashPool -= deposit;
-      }
-
-      if (bCashPool > 0 && bSimOffsetFern < bSimLoanFern) {
-        const space = bSimLoanFern - bSimOffsetFern;
-        const deposit = Math.min(bCashPool, space);
-        bSimOffsetFern += deposit;
-        bCashPool -= deposit;
-      }
-
-      if (bCashPool > 0) {
-        bSimExtraCashSavings += bCashPool;
-        bCashPool = 0;
-      }
-
-      if (w % 13 === 0 || w === 30 * 52) {
-        const tVal = w / 52;
-        const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
-        const fernVal = 850000 * Math.pow(1.05, tVal);
-        const totalPropValue = Math.round(fhVal + fernVal);
-        const currentNetDebt = (bSimLoanFH - bSimOffsetFH) + (bSimLoanFern - bSimOffsetFern) - bSimExtraCashSavings;
-        const netWealthVal = Math.round(totalPropValue - currentNetDebt);
-
-        baselineSimulationData.push({
-          week: w,
-          year: (w / 52).toFixed(1),
-          loanFH: Math.round(bSimLoanFH),
-          offsetFH: Math.round(bSimOffsetFH),
-          loanFern: Math.round(bSimLoanFern),
-          offsetFern: Math.round(bSimOffsetFern),
-          extraCashSavings: Math.round(bSimExtraCashSavings),
-          netDebt: Math.round(currentNetDebt),
-          propertyValue: totalPropValue,
-          netWealth: netWealthVal,
-        });
-      }
-    }
-
-    if (baselineFhNeutralizedWeek === -1) {
-      bMilestoneFHOffset = {
-        fhLoan: Math.round(bSimLoanFH),
-        fhOffset: Math.round(bSimOffsetFH),
-        fernLoan: Math.round(bSimLoanFern),
-        fernOffset: Math.round(bSimOffsetFern),
-        week: 30 * 52,
-      };
-    }
-    if (baselineBothNeutralizedWeek === -1) {
-      bMilestoneFernOffset = {
-        fhLoan: Math.round(bSimLoanFH),
-        fhOffset: Math.round(bSimOffsetFH),
-        fernLoan: Math.round(bSimLoanFern),
-        fernOffset: Math.round(bSimOffsetFern),
-        week: 30 * 52,
-      };
-    }
-
-    // PART B: Run Active Portfolio Simulation (including future expenses and other incomes)
-    const simulationData: SimulationDataPoint[] = [];
-    let simLoanFH = recastForeverHomeLoanPrincipal;
-    let simOffsetFH = recastOffsetBalance;
-    let simLoanFern = ACCOUNT_BALANCES.fernLoan;
-    let simOffsetFern = 0;
-    let simExtraCashSavings = 0;
-
-    let fhNeutralizedWeek = -1;
-    let bothNeutralizedWeek = -1;
-    let fernNeutralizedWeek = -1;
-    let nbFullyOffsetWeek = -1;
-
-    let fhPaidOffWeek = -1;
-    let fernPaidOffWeek = -1;
-    let nbPaidOffWeek = -1;
-
-    let fhTotalInterestPaidSim = 0;
-    let fernTotalInterestPaidSim = 0;
-    let nbTotalInterestPaidSim = 0;
-
-    let fhTotalPaidSim = 0;
-    let fernTotalPaidSim = 0;
-    let nbTotalPaidSim = 0;
-
-    let fhInterestAtOffset = 0;
-    let fhInterestAtBothOffset = 0;
-    let fernInterestAtBothOffset = 0;
-
-    let milestoneRecast = {
-      fhLoan: Math.round(simLoanFH),
-      fhOffset: Math.round(simOffsetFH),
-      fernLoan: Math.round(simLoanFern),
-      fernOffset: Math.round(simOffsetFern),
-      week: 0,
-    };
-
-    let milestoneFHOffset = {
-      fhLoan: 0,
-      fhOffset: 0,
-      fernLoan: 0,
-      fernOffset: 0,
-      week: -1,
-    };
-
-    let milestoneFernOffset = {
-      fhLoan: 0,
-      fhOffset: 0,
-      fernLoan: 0,
-      fernOffset: 0,
-      week: -1,
-    };
-
-    // Track active new loans created during simulation with offset attachment
-    let activeNewLoans: { id: string; amount: number; principal: number; weeklyPayment: number; weekStarted: number; offset: number }[] = [];
-    let activeNewLoansInterestPaid = 0;
-
-    // Track New Build Loan created during simulation
-    let simLoanNewBuild = 0;
-    let simOffsetNewBuild = 0;
-    let newBuildWeeklyPayment = 0;
-    let newBuildInterestPaid = 0;
-    // w_build is defined above at the start of Part A
-
-    let liquidOffsetAtBuildVal = 0;
-    let actualDrawFromOffsetsVal = 0;
-    let newBuildLoanAmountVal = 0;
-
-    let activeHalfOffsetWeek = -1;
-    let activeFullyOffsetWeek = -1;
-
-    let fhInterestAtActiveFullyOffset = 0;
-    let fernInterestAtActiveFullyOffset = 0;
-    let nbInterestAtActiveFullyOffset = 0;
-    let newLoansInterestAtActiveFullyOffset = 0;
-
-    let milestoneActiveFullyOffset = {
-      fhLoan: 0,
-      fhOffset: 0,
-      fernLoan: 0,
-      fernOffset: 0,
-      nbLoan: 0,
-      nbOffset: 0,
-      otherLoan: 0,
-      otherOffset: 0,
-      week: -1,
-    };
-
-    const historyStateAtWeek = new Map<number, {
-      fhLoan: number;
-      fhOffset: number;
-      fernLoan: number;
-      fernOffset: number;
-      nbLoan: number;
-      nbOffset: number;
-      otherLoan: number;
-      otherOffset: number;
-      extraCash: number;
-    }>();
-
-    for (let w = 0; w <= 30 * 52; w++) {
-      // 1. Process future drawdowns/expenses starting this week
-      futureExpenses.forEach((exp) => {
-        const triggerWeek = Math.round(exp.timingYears * 52);
-        if (w === triggerWeek) {
-          if (exp.source === "offset_fh") {
-            simOffsetFH = Math.max(0, simOffsetFH - exp.amount);
-          } else if (exp.source === "offset_fern") {
-            simOffsetFern = Math.max(0, simOffsetFern - exp.amount);
-          } else if (exp.source === "new_loan") {
-            // New loan P&I over standard 30-year term
-            const rLoanWeekly = rWeeklyFHSim;
-            const nLoanWeeks = 30 * 52;
-            const pmt = rLoanWeekly > 0 
-              ? (exp.amount * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
-              : 0;
-            
-            activeNewLoans.push({
-              id: exp.id,
-              amount: exp.amount,
-              principal: exp.amount,
-              weeklyPayment: pmt,
-              weekStarted: w,
-              offset: 0,
-            });
-          }
-        }
-      });
-
-      // Process New Build spending drawdown event at exact week
-      if (w === w_build) {
-        liquidOffsetAtBuildVal = simOffsetFH + simOffsetFern + simExtraCashSavings;
-        const availableOffsets = Math.max(0, liquidOffsetAtBuildVal - newBuildBuffer);
-        const preferredDraw = availableOffsets * (newBuildDrawChoicePct / 100);
-        actualDrawFromOffsetsVal = Math.min(newBuildSpend, preferredDraw);
-        newBuildLoanAmountVal = Math.max(0, newBuildSpend - actualDrawFromOffsetsVal);
-
-        // Deduct actualDrawFromOffsetsVal from our offset reserves / savings
-        let pullRemaining = actualDrawFromOffsetsVal;
-        if (pullRemaining > 0) {
-          // First draw from the extra cash savings!
-          const pullExtra = Math.min(simExtraCashSavings, pullRemaining);
-          simExtraCashSavings -= pullExtra;
-          pullRemaining -= pullExtra;
-
-          // If still remaining, draw from actual offset accounts based on toggle
-          if (pullRemaining > 0) {
-            if (inputs.depletionPriorityToggle === "paulan") {
-              const pullFH = Math.min(simOffsetFH, pullRemaining);
-              simOffsetFH -= pullFH;
-              pullRemaining -= pullFH;
-              if (pullRemaining > 0) {
-                const pullFern = Math.min(simOffsetFern, pullRemaining);
-                simOffsetFern -= pullFern;
-                pullRemaining -= pullFern;
-              }
-            } else {
-              const pullFern = Math.min(simOffsetFern, pullRemaining);
-              simOffsetFern -= pullFern;
-              pullRemaining -= pullFern;
-              if (pullRemaining > 0) {
-                const pullFH = Math.min(simOffsetFH, pullRemaining);
-                simOffsetFH -= pullFH;
-                pullRemaining -= pullFH;
-              }
-            }
-          }
-        }
-
-        if (newBuildLoanAmountVal > 0) {
-          simLoanNewBuild = newBuildLoanAmountVal;
-          const rLoanWeekly = rWeeklyFHSim;
-          const nLoanWeeks = 30 * 52;
-          newBuildWeeklyPayment = rLoanWeekly > 0 
-            ? (newBuildLoanAmountVal * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
-            : 0;
-
-          // Move remaining extra cash savings completely into the new build offset loan as a priority!
-          if (simExtraCashSavings > 0) {
-            const depositToNB = Math.min(simExtraCashSavings, simLoanNewBuild - simOffsetNewBuild);
-            simOffsetNewBuild += depositToNB;
-            simExtraCashSavings -= depositToNB;
-          }
-        }
-      }
-
-      // 2. Process extra incomes in this week with 15% tax haircut applied
-      let extraWeeklyIncomeInThisWeek = 0;
-      futureIncomes.forEach((inc) => {
-        const startWeek = Math.round(inc.timingStartYears * 52);
-        const endWeek = inc.timingEndYears !== null ? Math.round(inc.timingEndYears * 52) : (30 * 52);
-        if (w >= startWeek && w <= endWeek) {
-          const weeklyAfterTax = (inc.annualAmount * 0.85) / 52;
-          extraWeeklyIncomeInThisWeek += weeklyAfterTax;
-        }
-      });
-
-      // 3. Update active simulation neutralization triggers
-      let currNewLoansPrincipal = 0;
-      let currNewLoansOffset = 0;
-      activeNewLoans.forEach((l) => {
-        currNewLoansPrincipal += l.principal;
-        currNewLoansOffset += l.offset;
-      });
-
-      const activeTotalDebt = simLoanFH + simLoanFern + currNewLoansPrincipal + simLoanNewBuild;
-      const activeTotalOffsets = simOffsetFH + simOffsetFern + currNewLoansOffset + simOffsetNewBuild + simExtraCashSavings;
-
-      if (w >= w_build && activeTotalDebt > 0 && activeTotalOffsets >= activeTotalDebt * 0.5 && activeHalfOffsetWeek === -1) {
-        activeHalfOffsetWeek = w;
-      }
-      const fhInterest = Math.max(0, simLoanFH - simOffsetFH) * rWeeklyFHSim;
-      const fernInterest = Math.max(0, simLoanFern - simOffsetFern) * rWeeklyFernSim;
-
-      if (simOffsetFH >= simLoanFH && fhNeutralizedWeek === -1) {
-        fhNeutralizedWeek = w;
-        milestoneFHOffset = {
-          fhLoan: Math.round(simLoanFH),
-          fhOffset: Math.round(simOffsetFH),
-          fernLoan: Math.round(simLoanFern),
-          fernOffset: Math.round(simOffsetFern),
-          week: w,
-        };
-      }
-      if (
-        simOffsetFH >= simLoanFH &&
-        simOffsetFern >= simLoanFern &&
-        bothNeutralizedWeek === -1
-      ) {
-        bothNeutralizedWeek = w;
-        milestoneFernOffset = {
-          fhLoan: Math.round(simLoanFH),
-          fhOffset: Math.round(simOffsetFH),
-          fernLoan: Math.round(simLoanFern),
-          fernOffset: Math.round(simOffsetFern),
-          week: w,
-        };
-      }
-
-      // Accumulate interest paid prior to reaching neutralization milestones
-      if (fhNeutralizedWeek === -1) {
-        fhInterestAtOffset += fhInterest;
-      }
-      if (bothNeutralizedWeek === -1) {
-        fhInterestAtBothOffset += fhInterest;
-        fernInterestAtBothOffset += fernInterest;
-      }
-
-      fhInterestAtActiveFullyOffset += fhInterest;
-      fernInterestAtActiveFullyOffset += fernInterest;
-      if (simLoanNewBuild > 0 && w >= w_build) {
-        const nbInterest = Math.max(0, simLoanNewBuild - simOffsetNewBuild) * rWeeklyFHSim;
-        nbInterestAtActiveFullyOffset += nbInterest;
-      }
-      activeNewLoans.forEach((loan) => {
-        if (loan.principal > 0) {
-          const lInterest = Math.max(0, loan.principal - loan.offset) * rWeeklyFHSim;
-          newLoansInterestAtActiveFullyOffset += lInterest;
-        }
-      });
-
-      if (simOffsetFern >= simLoanFern && fernNeutralizedWeek === -1) {
-        fernNeutralizedWeek = w;
-      }
-
-      let actualFhPaymentPaid = 0;
-      if (simLoanFH > 0) {
-        fhTotalInterestPaidSim += fhInterest;
-        actualFhPaymentPaid = Math.min(simLoanFH + fhInterest, recastWeeklyPayment);
-        fhTotalPaidSim += actualFhPaymentPaid;
-      }
-      let actualFernPaymentPaid = 0;
-      if (simLoanFern > 0) {
-        fernTotalInterestPaidSim += fernInterest;
-        actualFernPaymentPaid = Math.min(simLoanFern + fernInterest, fernWeeklyPayment);
-        fernTotalPaidSim += actualFernPaymentPaid;
-      }
-
-      const fhPrincipalReduction = Math.max(0, recastWeeklyPayment - fhInterest);
-      if (simLoanFH > 0 && simLoanFH - fhPrincipalReduction <= 0 && fhPaidOffWeek === -1) {
-        fhPaidOffWeek = w;
-      }
-      simLoanFH = Math.max(0, simLoanFH - fhPrincipalReduction);
-
-      const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
-      if (simLoanFern > 0 && simLoanFern - fernPrincipalReduction <= 0 && fernPaidOffWeek === -1) {
-        fernPaidOffWeek = w;
-      }
-      simLoanFern = Math.max(0, simLoanFern - fernPrincipalReduction);
-
-      // 4. Model the New Build Loan performance
-      let actualNbPaymentPaid = 0;
-      if (simLoanNewBuild > 0 && w >= w_build) {
-        const nbInterest = Math.max(0, simLoanNewBuild - simOffsetNewBuild) * rWeeklyFHSim;
-        newBuildInterestPaid += nbInterest;
-        nbTotalInterestPaidSim += nbInterest;
-        actualNbPaymentPaid = Math.min(simLoanNewBuild + nbInterest, newBuildWeeklyPayment);
-        nbTotalPaidSim += actualNbPaymentPaid;
-        const nbPrincipalPaid = Math.max(0, newBuildWeeklyPayment - nbInterest);
-        if (simLoanNewBuild - nbPrincipalPaid <= 0 && nbPaidOffWeek === -1) {
-          nbPaidOffWeek = w;
-        }
-        if (simOffsetNewBuild >= simLoanNewBuild && nbFullyOffsetWeek === -1) {
-          nbFullyOffsetWeek = w;
-        }
-        simLoanNewBuild = Math.max(0, simLoanNewBuild - nbPrincipalPaid);
-      }
-
-      // Freed up payments from loans completely ended
-      const fhFreedUp = recastWeeklyPayment - actualFhPaymentPaid;
-      const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
-
-      // Track savings surplus or repayment deficit (repayments redirected to cash/offsets on payoff)
-      const currentActiveSavingsRate = (newBuildPostWeeklySavingsOverride !== null && w >= w_build)
-        ? newBuildPostWeeklySavingsOverride
-        : inputs.weeklySavings;
-
-      let remainingSavings = currentActiveSavingsRate + extraWeeklyIncomeInThisWeek + fhFreedUp + fernFreedUp;
-
-      // Pay off new loans weekly repayments
-      let totalNewLoansRepayment = 0;
-      let totalNewLoansPrincipal = 0;
-      let totalNewLoansOffset = 0;
-
-      activeNewLoans.forEach((loan) => {
-        if (loan.principal > 0) {
-          // Interest is calculated on principal minus offset
-          const lInterest = Math.max(0, loan.principal - loan.offset) * rWeeklyFHSim;
-          activeNewLoansInterestPaid += lInterest;
-          const lPrincipalPaid = Math.max(0, loan.weeklyPayment - lInterest);
-          
-          let actualPayment = loan.weeklyPayment;
-          if (loan.principal - lPrincipalPaid <= 0) {
-            actualPayment = lInterest + loan.principal;
-            loan.principal = 0;
-          } else {
-            loan.principal = loan.principal - lPrincipalPaid;
-          }
-          
-          totalNewLoansRepayment += actualPayment;
-          totalNewLoansPrincipal += loan.principal;
-          totalNewLoansOffset += loan.offset;
-        }
-      });
-
-      remainingSavings -= totalNewLoansRepayment;
-      remainingSavings -= actualNbPaymentPaid;
-
-      // Deficit handling inside active simulation: pull from extra cash savings first, then offset accounts to cover the loan costs
-      if (remainingSavings < 0) {
-        let savingsDeficit = -remainingSavings;
-        remainingSavings = 0;
-
-        if (simExtraCashSavings > 0) {
-          const pullExtra = Math.min(simExtraCashSavings, savingsDeficit);
-          simExtraCashSavings -= pullExtra;
-          savingsDeficit -= pullExtra;
-        }
-
-        if (savingsDeficit > 0) {
-          if (inputs.depletionPriorityToggle === "paulan") {
-            const pullFH = Math.min(simOffsetFH, savingsDeficit);
-            simOffsetFH -= pullFH;
-            savingsDeficit -= pullFH;
-            if (savingsDeficit > 0) {
-              const pullFern = Math.min(simOffsetFern, savingsDeficit);
-              simOffsetFern -= pullFern;
-              savingsDeficit -= pullFern;
-            }
-            if (savingsDeficit > 0) {
-              for (let i = 0; i < activeNewLoans.length; i++) {
-                const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
-                activeNewLoans[i].offset -= pullN;
-                savingsDeficit -= pullN;
-                if (savingsDeficit <= 0) break;
-              }
-            }
-            if (savingsDeficit > 0 && simOffsetNewBuild > 0) {
-              const pullNB = Math.min(simOffsetNewBuild, savingsDeficit);
-              simOffsetNewBuild -= pullNB;
-              savingsDeficit -= pullNB;
-            }
-          } else {
-            const pullFern = Math.min(simOffsetFern, savingsDeficit);
-            simOffsetFern -= pullFern;
-            savingsDeficit -= pullFern;
-            if (savingsDeficit > 0) {
-              const pullFH = Math.min(simOffsetFH, savingsDeficit);
-              simOffsetFH -= pullFH;
-              savingsDeficit -= pullFH;
-            }
-            if (savingsDeficit > 0) {
-              for (let i = 0; i < activeNewLoans.length; i++) {
-                const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
-                activeNewLoans[i].offset -= pullN;
-                savingsDeficit -= pullN;
-                if (savingsDeficit <= 0) break;
-              }
-            }
-            if (savingsDeficit > 0 && simOffsetNewBuild > 0) {
-              const pullNB = Math.min(simOffsetNewBuild, savingsDeficit);
-              simOffsetNewBuild -= pullNB;
-              savingsDeficit -= pullNB;
-            }
-          }
-        }
-      }
-
-      // Clamping: offsets cannot exceed the newly reduced principal
-      let excessFromClamping = 0;
-      if (simOffsetFH > simLoanFH) {
-        excessFromClamping += (simOffsetFH - simLoanFH);
-        simOffsetFH = simLoanFH;
-      }
-      if (simOffsetFern > simLoanFern) {
-        excessFromClamping += (simOffsetFern - simLoanFern);
-        simOffsetFern = simLoanFern;
-      }
-      activeNewLoans.forEach((loan) => {
-        if (loan.offset > loan.principal) {
-          excessFromClamping += (loan.offset - loan.principal);
-          loan.offset = loan.principal;
-        }
-      });
-      if (simOffsetNewBuild > simLoanNewBuild) {
-        excessFromClamping += (simOffsetNewBuild - simLoanNewBuild);
-        simOffsetNewBuild = simLoanNewBuild;
-      }
-
-      // Total available cash pool to allocate to offsets this week
-      let cashPool = remainingSavings + excessFromClamping;
-
-      // 1. Allocate to FH offset
-      if (cashPool > 0 && simOffsetFH < simLoanFH) {
-        const space = simLoanFH - simOffsetFH;
-        const deposit = Math.min(cashPool, space);
-        simOffsetFH += deposit;
-        cashPool -= deposit;
-      }
-
-      // 2. Allocate to New Build offset (if it exists)
-      if (cashPool > 0 && w >= w_build && simLoanNewBuild > 0 && simOffsetNewBuild < simLoanNewBuild) {
-        const space = simLoanNewBuild - simOffsetNewBuild;
-        const deposit = Math.min(cashPool, space);
-        simOffsetNewBuild += deposit;
-        cashPool -= deposit;
-      }
-
-      // 3. Allocate to Fern offset
-      if (cashPool > 0 && simOffsetFern < simLoanFern) {
-        const space = simLoanFern - simOffsetFern;
-        const deposit = Math.min(cashPool, space);
-        simOffsetFern += deposit;
-        cashPool -= deposit;
-      }
-
-      // 4. Allocate to active new loan offsets
-      if (cashPool > 0) {
-        for (let i = 0; i < activeNewLoans.length; i++) {
-          const loan = activeNewLoans[i];
-          if (loan.principal > 0 && loan.offset < loan.principal) {
-            const space = loan.principal - loan.offset;
-            const deposit = Math.min(cashPool, space);
-            loan.offset += deposit;
-            cashPool -= deposit;
-          }
-          if (cashPool <= 0) break;
-        }
-      }
-
-      // 5. Finally, put the overflow into Extra Cash Savings
-      if (cashPool > 0) {
-        simExtraCashSavings += cashPool;
-        cashPool = 0;
-      }
-
-      // Keep totals up-to-date for records after offset changes
-      totalNewLoansOffset = 0;
-      activeNewLoans.forEach((l) => {
-        totalNewLoansOffset += l.offset;
-      });
-
-      historyStateAtWeek.set(w, {
-        fhLoan: Math.round(simLoanFH),
-        fhOffset: Math.round(simOffsetFH),
-        fernLoan: Math.round(simLoanFern),
-        fernOffset: Math.round(simOffsetFern),
-        nbLoan: Math.round(simLoanNewBuild),
-        nbOffset: Math.round(simOffsetNewBuild),
-        otherLoan: Math.round(totalNewLoansPrincipal),
-        otherOffset: Math.round(totalNewLoansOffset),
-        extraCash: Math.round(simExtraCashSavings),
-      });
-
-      if (w % 13 === 0 || w === 30 * 52) {
-        const tVal = w / 52;
-        const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
-        const fernVal = 850000 * Math.pow(1.05, tVal);
-        let nbVal = 0;
-        if (w >= w_build) {
-          nbVal = newBuildSpend * Math.pow(1.05, (w - w_build) / 52);
-        }
-        const totalPropValue = Math.round(fhVal + fernVal + nbVal);
-        const currentNetDebt = (simLoanFH - simOffsetFH) + 
-          (simLoanFern - simOffsetFern) + 
-          (totalNewLoansPrincipal - totalNewLoansOffset) +
-          (simLoanNewBuild - simOffsetNewBuild) -
-          simExtraCashSavings;
-        const netWealthVal = Math.round(totalPropValue - currentNetDebt);
-
-        simulationData.push({
-          week: w,
-          year: (w / 52).toFixed(1),
-          loanFH: Math.round(simLoanFH),
-          offsetFH: Math.round(simOffsetFH),
-          loanFern: Math.round(simLoanFern),
-          offsetFern: Math.round(simOffsetFern),
-          newLoansPayable: Math.round(totalNewLoansPrincipal),
-          newLoansOffset: Math.round(totalNewLoansOffset),
-          newBuildLoan: Math.round(simLoanNewBuild),
-          newBuildOffset: Math.round(simOffsetNewBuild),
-          extraCashSavings: Math.round(simExtraCashSavings),
-          netDebt: Math.round(currentNetDebt),
-          propertyValue: totalPropValue,
-          netWealth: netWealthVal,
-        });
-      }
-    }
-
-    if (fhNeutralizedWeek === -1) {
-      milestoneFHOffset = {
-        fhLoan: Math.round(simLoanFH),
-        fhOffset: Math.round(simOffsetFH),
-        fernLoan: Math.round(simLoanFern),
-        fernOffset: Math.round(simOffsetFern),
-        week: 30 * 52,
-      };
-    }
-    if (bothNeutralizedWeek === -1) {
-      milestoneFernOffset = {
-        fhLoan: Math.round(simLoanFH),
-        fhOffset: Math.round(simOffsetFH),
-        fernLoan: Math.round(simLoanFern),
-        fernOffset: Math.round(simOffsetFern),
-        week: 30 * 52,
-      };
-    }
-
-    let lastNetDebtWeek = -1;
-    for (let w = 0; w <= 30 * 52; w++) {
-      const state = historyStateAtWeek.get(w);
-      if (state) {
-        const debt = state.fhLoan + state.fernLoan + state.nbLoan + state.otherLoan;
-        const offset = state.fhOffset + state.fernOffset + state.nbOffset + state.otherOffset + state.extraCash;
-        if (debt > offset) {
-          lastNetDebtWeek = w;
-        }
-      }
-    }
-
-    if (lastNetDebtWeek === -1) {
-      activeFullyOffsetWeek = 0;
-    } else if (lastNetDebtWeek < 30 * 52) {
-      activeFullyOffsetWeek = lastNetDebtWeek + 1;
-    } else {
-      activeFullyOffsetWeek = -1;
-    }
-
-    if (activeFullyOffsetWeek !== -1) {
-      const state = historyStateAtWeek.get(activeFullyOffsetWeek);
-      if (state) {
-        milestoneActiveFullyOffset = {
-          fhLoan: state.fhLoan,
-          fhOffset: state.fhOffset,
-          fernLoan: state.fernLoan,
-          fernOffset: state.fernOffset,
-          nbLoan: state.nbLoan,
-          nbOffset: state.nbOffset,
-          otherLoan: state.otherLoan,
-          otherOffset: state.otherOffset,
-          week: activeFullyOffsetWeek,
-        };
-      }
-    } else {
-      let finalOtherLoan = 0;
-      let finalOtherOffset = 0;
-      activeNewLoans.forEach((l) => {
-        finalOtherLoan += l.principal;
-        finalOtherOffset += l.offset;
-      });
-
-      milestoneActiveFullyOffset = {
-        fhLoan: Math.round(simLoanFH),
-        fhOffset: Math.round(simOffsetFH),
-        fernLoan: Math.round(simLoanFern),
-        fernOffset: Math.round(simOffsetFern),
-        nbLoan: Math.round(simLoanNewBuild),
-        nbOffset: Math.round(simOffsetNewBuild),
-        otherLoan: Math.round(finalOtherLoan),
-        otherOffset: Math.round(finalOtherOffset),
-        week: 30 * 52,
-      };
-    }
-
-    // High-Fidelity Transition Period Simulation Engine
-    const transitionWeeksData: any[] = [];
-    let cumulativeTransitionInterest = 0;
-    let maxWeeklyRepaymentInTransition = 0;
-    let totalMerylRentInTransition = 0;
-    let transitionMerylWeeks = 0;
-    let transitionDoubleMortgageWeeks = 0;
-
-    const transitionEndDay = Math.max(timeline.merylSettleEnd, timeline.paulanSettleEnd, timeline.moveEnd);
-    const transitionWeeksCount = Math.ceil(transitionEndDay / 7);
-
-    for (let w = 0; w <= transitionWeeksCount; w++) {
-      const dayOffset = w * 7;
-      const dateStr = getGanttDateStr(dayOffset);
-
-      // 1. Meryl's Renting
-      const rentStart = timeline.merylRentStart;
-      const rentEnd = timeline.merylRentEnd;
-      const hasRentThisWeek = dayOffset >= rentStart && dayOffset < rentEnd;
-      const rentCostThisWeek = hasRentThisWeek ? inputs.merylRentCostPerWeek : 0;
-      totalMerylRentInTransition += rentCostThisWeek;
-      if (hasRentThisWeek) {
-        transitionMerylWeeks++;
-      }
-
-      // 2. Forever Home State
-      const fhOpened = dayOffset >= timeline.fhSettleEnd;
-      const merylSettled = dayOffset >= timeline.merylSettleEnd;
-      const paulanSettled = dayOffset >= timeline.paulanSettleEnd;
-      const gfiOccurred = dayOffset >= timeline.gfiStart;
-
-      // Recast active trigger checking
-      let isRecast = false;
-      if (fhOpened) {
-        if (inputs.recastTriggerEvent === "day1") {
-          isRecast = true;
-        } else if (inputs.recastTriggerEvent === "gfi") {
-          isRecast = gfiOccurred;
-        } else if (inputs.recastTriggerEvent === "paulan") {
-          isRecast = gfiOccurred && paulanSettled;
-        }
-      }
-
-      const fhLoanBeforeRecast = loanRequired;
-      const fhLoanAfterRecast = recastForeverHomeLoanPrincipal;
-      const currFHLoan = fhOpened ? (isRecast ? fhLoanAfterRecast : fhLoanBeforeRecast) : 0;
-      const currFHRepayment = fhOpened ? (isRecast ? recastWeeklyPayment : initialWeeklyPayment) : 0;
-
-      // Extra savings accumulation since FH Opened
-      const weeksFHOpened = fhOpened ? Math.floor((dayOffset - timeline.fhSettleEnd) / 7) : 0;
-      const savingsAccumulated = weeksFHOpened * inputs.weeklySavings;
-
-      // Offset tracking:
-      // FH offset starting point
-      let fhOffsetRaw = fhOpened ? remainingDay1CashCushion : 0;
-      if (fhOpened && gfiOccurred && !gfiBeforeFHSettle) {
-        fhOffsetRaw += inputs.merylContribution;
-      }
-      if (fhOpened && paulanSettled) {
-        fhOffsetRaw += paulanNetProceeds;
-      }
-      if (fhOpened && isRecast) {
-        fhOffsetRaw -= appliedToPrincipalReduction;
-      }
-      if (fhOpened) {
-        fhOffsetRaw += savingsAccumulated;
-        fhOffsetRaw -= (inputs.fhRenoMovingCost ?? 10000);
-      }
-
-      const fhOffsetCurrent = Math.min(currFHLoan, Math.max(0, fhOffsetRaw));
-      const excessFHOffset = Math.max(0, fhOffsetRaw - fhOffsetCurrent);
-
-      // Paulan Court Property
-      let paulanLoan = 0;
-      let paulanOffset = 0;
-      let paulanRepay = 0;
-      let paulanInterest = 0;
-
-      if (!paulanSettled) {
-        paulanLoan = ACCOUNT_BALANCES.paulansLoan;
-        paulanRepay = 537.36; // Contractual P&I payment
-        // Offset
-        const basePaulanOffset = ACCOUNT_BALANCES.paulansOffset;
-        const currentPaulanOffset = fhOpened ? (basePaulanOffset - paulanOffsetPulled) : basePaulanOffset;
-        paulanOffset = currentPaulanOffset;
-        paulanInterest = Math.max(0, paulanLoan - paulanOffset) * (0.0618 / 52);
-      }
-
-      if (fhOpened && !paulanSettled) {
-        transitionDoubleMortgageWeeks++;
-      }
-
-      // Fern St Property
-      let fernLoan = ACCOUNT_BALANCES.fernLoan;
-      const fernContractualRepay = 783.74;
-      let fernOffsetBase = ACCOUNT_BALANCES.fernOffset;
-      if (fhOpened) {
-        fernOffsetBase = fernOffsetBase - fernOffsetPulled;
-      }
-      // Add any excess offset from Forever Home
-      let fernOffset = fernOffsetBase + excessFHOffset;
-      fernOffset = Math.min(fernLoan, fernOffset);
-
-      const fernInterest = Math.max(0, fernLoan - fernOffset) * (0.0615 / 52);
-
-      // Cumulative interest
-      const fhInterest = Math.max(0, currFHLoan - fhOffsetCurrent) * rWeekly;
-      
-      const weeklyInterestPaid = fhInterest + paulanInterest + fernInterest;
-      cumulativeTransitionInterest += weeklyInterestPaid;
-
-      const totalWeeklyRepayments = currFHRepayment + paulanRepay + fernContractualRepay;
-      maxWeeklyRepaymentInTransition = Math.max(maxWeeklyRepaymentInTransition, totalWeeklyRepayments);
-
-      transitionWeeksData.push({
-        week: w,
-        dayOffset,
-        dateStr,
-        merylRentCost: rentCostThisWeek,
-        fhLoan: currFHLoan,
-        fhOffset: fhOffsetCurrent,
-        fhRepay: currFHRepayment,
-        fhInterest,
-        fhPrincipal: Math.max(0, currFHRepayment - fhInterest),
-        paulanLoan,
-        paulanOffset,
-        paulanRepay,
-        paulanInterest,
-        paulanPrincipal: Math.max(0, paulanRepay - paulanInterest),
-        fernLoan,
-        fernOffset,
-        fernRepay: fernContractualRepay,
-        fernInterest,
-        fernPrincipal: Math.max(0, fernContractualRepay - fernInterest),
-        totalRepay: totalWeeklyRepayments + rentCostThisWeek,
-        totalInterest: weeklyInterestPaid,
-        hasRentThisWeek,
-        isRecast,
-        paulanSettled,
-        merylSettled,
-        fhOpened,
-        doubleMortgage: fhOpened && !paulanSettled,
-      });
-    }
-
-    // Generate programmatic Interest Rate vs. Weekly Savings Sensitivity Matrix
-    const rateDeltas = [0, 1.0, 2.0, 3.0]; // Current, +1%, +2%, +3%
-    const savingsMultipliers = [0.75, 1.0, 1.25]; // -25%, Current, +25%
-    const sensitivityMatrix = rateDeltas.map((dRate) => {
-      const testRate = inputs.interestRate + dRate;
-      const rWeeklyTest = testRate / 100 / 52;
-      const nWeeks = 30 * 52;
-
-      // Recalculate initial pre-recast weekly payment for this rate
-      const testInitialPayment =
-        loanRequired > 0
-          ? (loanRequired * rWeeklyTest * Math.pow(1 + rWeeklyTest, nWeeks)) /
-            (Math.pow(1 + rWeeklyTest, nWeeks) - 1)
-          : 0;
-
-      // Recalculate recast post-recast weekly payment for this rate
-      const testRecastPayment =
-        recastForeverHomeLoanPrincipal > 0
-          ? (recastForeverHomeLoanPrincipal *
-              rWeeklyTest *
-              Math.pow(1 + rWeeklyTest, nWeeks)) /
-            (Math.pow(1 + rWeeklyTest, nWeeks) - 1)
-          : 0;
-
-      const cells = savingsMultipliers.map((mSavings) => {
-        const testWeeklySavings = inputs.weeklySavings * mSavings;
-
-        let simFH = recastForeverHomeLoanPrincipal;
-        let simOffFH = recastOffsetBalance;
-        let simFern = ACCOUNT_BALANCES.fernLoan;
-        let simOffFern = 0;
-
-        let testFHNeutralizedWeek = -1;
-        let testBothNeutralizedWeek = -1;
-
-        const rWeeklyFHTest = rWeeklyTest;
-        const rWeeklyFernTest = 0.0595 / 52;
-
-        for (let w = 0; w <= 30 * 52; w++) {
-          if (simOffFH >= simFH && testFHNeutralizedWeek === -1) {
-            testFHNeutralizedWeek = w;
-          }
-          if (
-            simOffFH >= simFH &&
-            simOffFern >= simFern &&
-            testBothNeutralizedWeek === -1
-          ) {
-            testBothNeutralizedWeek = w;
-          }
-
-          const fhInterest = Math.max(0, simFH - simOffFH) * rWeeklyFHTest;
-          const fernInterest = Math.max(0, simFern - simOffFern) * rWeeklyFernTest;
-
-          const fhPrincipalReduction = Math.max(0, testRecastPayment - fhInterest);
-          simFH = Math.max(0, simFH - fhPrincipalReduction);
-
-          const fernPrincipalReduction = Math.max(0, fernWeeklyPayment - fernInterest);
-          simFern = Math.max(0, simFern - fernPrincipalReduction);
-
-          let remainingSavings = testWeeklySavings;
-
-          if (simOffFH < simFH) {
-            const space = simFH - simOffFH;
-            const deposit = Math.min(remainingSavings, space);
-            simOffFH += deposit;
-            remainingSavings -= deposit;
-          }
-
-          if (remainingSavings > 0) {
-            if (simOffFern < simFern) {
-              const space = simFern - simOffFern;
-              simOffFern += Math.min(remainingSavings, space);
-            } else {
-              simOffFern = simFern;
-            }
-          }
-
-          if (simOffFH > simFH) {
-            const excessCash = simOffFH - simFH;
-            simOffFH = simFH;
-            if (simOffFern < simFern) {
-              const space = simFern - simOffFern;
-              simOffFern += Math.min(excessCash, space);
-            } else {
-              simOffFern = simFern;
-            }
-          }
-        }
-
-        return {
-          rateDelta: dRate,
-          savingsMultiplier: mSavings,
-          rateLabel: dRate === 0 ? "Current" : `+${dRate.toFixed(1)}%`,
-          savingsLabel: mSavings === 1.0 ? "Current" : mSavings === 0.75 ? "-25%" : "+25%",
-          fhYears: testFHNeutralizedWeek !== -1 ? (testFHNeutralizedWeek / 52).toFixed(1) : "30+",
-          bothYears: testBothNeutralizedWeek !== -1 ? (testBothNeutralizedWeek / 52).toFixed(1) : "30+",
-        };
-      });
-
-      return {
-        rateDelta: dRate,
-        testRate,
-        testInitialPayment,
-        testRecastPayment,
-        cells,
-      };
-    });
-
-    return {
-      stampDuty,
-      transactionCosts,
-      totalAcquisitionCost,
-      loanRequired,
-      maxAffordablePrice,
-      paulanNetProceeds,
-      sellingCosts,
-      merylGrossProceeds,
-      merylSellingFees,
-      merylNetProceeds,
-      merylCashSurplus,
-      totalPostSaleCashPool,
-      appliedToPrincipalReduction,
-      keptInOffsetAccount,
-      recastForeverHomeLoanPrincipal,
-      recastOffsetBalance,
-      recastWeeklyPayment,
-      initialWeeklyPayment,
-      fernWeeklyPayment,
-      surplusCashRedirectedToFern,
-      mortgageToIncomeRatio,
-      mortgageWithSavingsStrainRatio,
-      leftoverDiscretionaryCash,
-      aggregateTransitionInterest,
-      totalCommittedWeeklyOutlays,
-      targetDeposit20PctOfLoan,
-      totalCashAppliedToEquityAndFees: totalOffsetsPulled,
-      remainingDay1CashCushion,
-      minCashRequiredForSettlement,
-      isBufferCompromised,
-      gfiBeforeFHSettle,
-      paulanOffsetPulled,
-      fernOffsetPulled,
-      milestoneRecast,
-      milestoneFHOffset,
-      milestoneFernOffset,
-      milestoneActiveFullyOffset,
-      fhInterestAtOffset,
-      fernInterestAtBothOffset,
-      combinedInterestAtBothOffset: fhInterestAtBothOffset + fernInterestAtBothOffset,
-      fhInterestAtActiveFullyOffset,
-      fernInterestAtActiveFullyOffset,
-      nbInterestAtActiveFullyOffset,
-      newLoansInterestAtActiveFullyOffset,
-      combinedInterestAtActiveFullyOffset: fhInterestAtActiveFullyOffset + fernInterestAtActiveFullyOffset + nbInterestAtActiveFullyOffset + newLoansInterestAtActiveFullyOffset,
-      fhNeutralizedWeek,
-      bothNeutralizedWeek,
-      fhOffsetYears:
-        fhNeutralizedWeek !== -1 ? (fhNeutralizedWeek / 52).toFixed(1) : "30+",
-      bothOffsetYears:
-        bothNeutralizedWeek !== -1
-          ? (bothNeutralizedWeek / 52).toFixed(1)
-          : "30+",
-      baselineHalfOffsetYears:
-        baselineHalfOffsetWeek !== -1 ? (baselineHalfOffsetWeek / 52).toFixed(1) : "30+",
-      activeHalfOffsetYears:
-        activeHalfOffsetWeek !== -1 ? (activeHalfOffsetWeek / 52).toFixed(1) : "30+",
-      baselineFullyOffsetYears:
-        baselineFullyOffsetWeek !== -1 ? (baselineFullyOffsetWeek / 52).toFixed(1) : "30+",
-      activeFullyOffsetYears:
-        activeFullyOffsetWeek !== -1 ? (activeFullyOffsetWeek / 52).toFixed(1) : "30+",
-      activeFullyOffsetWeek,
-      simulationData,
-      baselineSimulationData,
-      baselineFhNeutralizedWeek,
-      baselineBothNeutralizedWeek,
-      baselineFhOffsetYears:
-        baselineFhNeutralizedWeek !== -1 ? (baselineFhNeutralizedWeek / 52).toFixed(1) : "30+",
-      baselineBothOffsetYears:
-        baselineBothNeutralizedWeek !== -1 ? (baselineBothNeutralizedWeek / 52).toFixed(1) : "30+",
-      activeNewLoansInterestPaid,
-      transitionWeeksData,
-      cumulativeTransitionInterest,
-      maxWeeklyRepaymentInTransition,
-      totalMerylRentInTransition,
-      transitionMerylWeeks,
-      transitionDoubleMortgageWeeks,
-      sensitivityMatrix,
-      liquidOffsetAtBuild: liquidOffsetAtBuildVal,
-      actualDrawFromOffsets: actualDrawFromOffsetsVal,
-      newBuildLoanAmount: newBuildLoanAmountVal,
-      newBuildWeeklyPayment,
-      newBuildInterestPaid,
-      fernNeutralizedWeek,
-      nbFullyOffsetWeek,
-      fhPaidOffWeek,
-      fernPaidOffWeek,
-      nbPaidOffWeek,
-      fhTotalInterestPaidSim,
-      fernTotalInterestPaidSim,
-      nbTotalInterestPaidSim,
-      fhTotalPaidSim,
-      fernTotalPaidSim,
-      nbTotalPaidSim,
-      baselineFhTotalInterestPaid: bFhTotalInterestPaid,
-      baselineFernTotalInterestPaid: bFernTotalInterestPaid,
-      baselineTotalInterestPaid: bFhTotalInterestPaid + bFernTotalInterestPaid,
-    };
-  }, [inputs, timeline, futureExpenses, futureIncomes, newBuildSpend, newBuildTiming, newBuildBuffer, newBuildDrawChoicePct, newBuildPostWeeklySavingsOverride]);
+  const finances = useSimulationEngine({
+    inputs,
+    timeline,
+    futureExpenses,
+    futureIncomes,
+    newBuildSpend,
+    newBuildTiming,
+    newBuildBuffer,
+    newBuildDrawChoicePct,
+    newBuildPostWeeklySavingsOverride,
+  });
 
   const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
@@ -2137,159 +627,6 @@ export default function App() {
       return adjustInputs(next);
     });
   };
-
-  const startGanttDrag = (
-    e: any,
-    field: keyof PropertyInputs,
-    type: string
-  ) => {
-    e.preventDefault();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    setActiveInteraction({
-      type,
-      field,
-      startX: clientX,
-      startVals: inputs,
-    });
-  };
-
-  useEffect(() => {
-    const handleGlobalMove = (e: any) => {
-      if (!activeInteraction || !ganttContainerRef.current) return;
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const rect = ganttContainerRef.current.getBoundingClientRect();
-      const containerWidth = rect.width;
-
-      const deltaX = clientX - activeInteraction.startX;
-      const deltaDays = Math.round(
-        (deltaX / containerWidth) * timeline.totalDurationDays
-      );
-
-      let updates: Partial<PropertyInputs> = {};
-
-      if (activeInteraction.type === "dragStart") {
-        const field = activeInteraction.field;
-        const vals = activeInteraction.startVals;
-
-        if (field === "merylPrepDays") {
-          const proposedStart = Math.max(0, vals.merylStartDelay + deltaDays);
-          const proposedDuration = Math.max(14, Math.min(180, vals.merylPrepDays - deltaDays));
-          updates = {
-            merylStartDelay: proposedStart,
-            merylPrepDays: proposedDuration,
-          };
-        } else if (field === "merylCampaignDays") {
-          const proposedPrep = Math.max(14, Math.min(180, vals.merylPrepDays + deltaDays));
-          const proposedCampaign = Math.max(7, Math.min(90, vals.merylCampaignDays - deltaDays));
-          updates = {
-            merylPrepDays: proposedPrep,
-            merylCampaignDays: proposedCampaign,
-          };
-        } else if (field === "merylSettleDays") {
-          const proposedCampaign = Math.max(7, Math.min(90, vals.merylCampaignDays + deltaDays));
-          const proposedSettle = Math.max(14, Math.min(120, vals.merylSettleDays - deltaDays));
-          updates = {
-            merylCampaignDays: proposedCampaign,
-            merylSettleDays: proposedSettle,
-          };
-        } else if (field === "merylRentStartOffset") {
-          const proposedOffset = vals.merylRentStartOffset + deltaDays;
-          updates = {
-            merylRentStartOffset: proposedOffset,
-          };
-        } else if (field === "fhSettleDays") {
-          const proposedStart = Math.max(0, vals.fhStartDelay + deltaDays);
-          const proposedDuration = Math.max(14, Math.min(120, vals.fhSettleDays - deltaDays));
-          updates = {
-            fhStartDelay: proposedStart,
-            fhSettleDays: proposedDuration,
-          };
-        } else if (field === "renoDays") {
-          const proposedSettle = Math.max(14, Math.min(120, vals.fhSettleDays + deltaDays));
-          const proposedReno = Math.max(0, Math.min(90, vals.renoDays - deltaDays));
-          updates = {
-            fhSettleDays: proposedSettle,
-            renoDays: proposedReno,
-          };
-        } else if (field === "moveDays") {
-          const proposedReno = Math.max(0, Math.min(90, vals.renoDays + deltaDays));
-          const proposedMove = Math.max(1, Math.min(30, vals.moveDays - deltaDays));
-          updates = {
-            renoDays: proposedReno,
-            moveDays: proposedMove,
-          };
-        } else if (field === "paulanCampaignDays") {
-          const proposedPrep = Math.max(1, Math.min(60, vals.paulanPrepDays + deltaDays));
-          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays - deltaDays));
-          updates = {
-            paulanPrepDays: proposedPrep,
-            paulanCampaignDays: proposedCampaign,
-          };
-        } else if (field === "paulanSettleDays") {
-          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays + deltaDays));
-          const proposedSettle = Math.max(14, Math.min(120, vals.paulanSettleDays - deltaDays));
-          updates = {
-            paulanCampaignDays: proposedCampaign,
-            paulanSettleDays: proposedSettle,
-          };
-        }
-      } else {
-        const field = activeInteraction.field;
-        const vals = activeInteraction.startVals;
-        const startVal = vals[field] ?? 0;
-        let newVal = startVal + deltaDays;
-        if (field !== "merylRentStartOffset" && field !== "gfiStartOffset") {
-          newVal = Math.max(0, newVal);
-        } else {
-          newVal = Math.max(-180, Math.min(250, newVal));
-        }
-
-        if (activeInteraction.type === "resize") {
-          if (field === "merylPrepDays") newVal = Math.max(14, Math.min(180, newVal));
-          if (field === "merylCampaignDays") newVal = Math.max(7, Math.min(90, newVal));
-          if (field === "merylSettleDays") newVal = Math.max(14, Math.min(120, newVal));
-          if (field === "fhSettleDays") newVal = Math.max(14, Math.min(120, newVal));
-          if (field === "renoDays") newVal = Math.max(0, Math.min(90, newVal));
-          if (field === "moveDays") newVal = Math.max(1, Math.min(30, newVal));
-          if (field === "paulanPrepDays") newVal = Math.max(1, Math.min(60, newVal));
-          if (field === "paulanCampaignDays") newVal = Math.max(7, Math.min(90, newVal));
-          if (field === "paulanSettleDays") newVal = Math.max(14, Math.min(120, newVal));
-          if (field === "merylRentingExtraDays") newVal = Math.max(0, Math.min(365, newVal));
-        } else {
-          newVal = Math.max(0, Math.min(250, newVal));
-        }
-
-        updates = {
-          [field]: newVal,
-        };
-      }
-
-      setInputs((prev) =>
-        adjustInputs({
-          ...prev,
-          ...updates,
-        })
-      );
-    };
-
-    const handleGlobalUp = () => {
-      setActiveInteraction(null);
-    };
-
-    if (activeInteraction) {
-      window.addEventListener("mousemove", handleGlobalMove);
-      window.addEventListener("mouseup", handleGlobalUp);
-      window.addEventListener("touchmove", handleGlobalMove, { passive: false });
-      window.addEventListener("touchend", handleGlobalUp);
-    }
-
-    return () => {
-      window.removeEventListener("mousemove", handleGlobalMove);
-      window.removeEventListener("mouseup", handleGlobalUp);
-      window.removeEventListener("touchmove", handleGlobalMove);
-      window.removeEventListener("touchend", handleGlobalUp);
-    };
-  }, [activeInteraction, timeline.totalDurationDays]);
 
   const handleSaveFinancialScenario = () => {
     if (!newScenarioName.trim()) return;
@@ -2300,17 +637,6 @@ export default function App() {
     ];
     setFinancialScenarios(updated);
     setNewScenarioName("");
-  };
-
-  const handleSaveTimelineScenario = () => {
-    if (!newTimelineScenarioName.trim()) return;
-    const name = newTimelineScenarioName.trim();
-    const updated = [
-      ...timelineScenarios.filter((s) => s.name !== name),
-      { name, inputs },
-    ];
-    setTimelineScenarios(updated);
-    setNewTimelineScenarioName("");
   };
 
   const handleLoadFinancialScenario = (scenario: PropertyScenario) => {
@@ -2325,24 +651,8 @@ export default function App() {
     });
   };
 
-  const handleLoadTimelineScenario = (scenario: PropertyScenario) => {
-    setInputs((current) => {
-      const updated = { ...current };
-      (Object.keys(current) as (keyof PropertyInputs)[]).forEach((key) => {
-        if (TIMELINE_KEYS.includes(key)) {
-          (updated as any)[key] = scenario.inputs[key];
-        }
-      });
-      return adjustInputs(updated);
-    });
-  };
-
   const handleDeleteFinancialScenario = (name: string) => {
     setFinancialScenarios((prev) => prev.filter((s) => s.name !== name));
-  };
-
-  const handleDeleteTimelineScenario = (name: string) => {
-    setTimelineScenarios((prev) => prev.filter((s) => s.name !== name));
   };
 
   const handleExportCsv = () => {
@@ -2541,6 +851,7 @@ export default function App() {
   <div class="container">
     <header>
       <h1>Forever Home Scenario Snapshot</h1>
+      <div class="subtitle" style="font-size: 1.05rem; font-weight: bold; color: #0f766e; margin-top: 4px;">📍 419 Old Yarragon-Leongatha Road, Yarragon South, VIC</div>
       <div class="subtitle">Forever Home Financial Modeler</div>
       <div class="meta-stamp">Scenario Export Date: ${reportDate} AEST</div>
     </header>
@@ -2687,7 +998,7 @@ export default function App() {
     </div>
     
     <div class="footer">
-      Forever Home Financial Modeler • Buln Buln & District • Baseline May 2026
+      Forever Home Financial Modeler • 419 Old Yarragon-Leongatha Road, Yarragon South • Baseline May 2026
     </div>
   </div>
 </body>
@@ -2717,9 +1028,12 @@ export default function App() {
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight font-serif text-emerald-900">
                 Forever Home Financial Modeler
               </h1>
+              <span className="hidden lg:inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold font-serif shadow-xs self-center">
+                📍 {DECIDED_PROPERTY_ADDRESS}
+              </span>
             </div>
             <p className="text-xs text-stone-500 mt-1 font-serif italic">
-              Multigenerational Transition & Cashflow Portfolio Modeler • Buln Buln & District • Baseline May 2026
+              Multigenerational Transition & Cashflow Portfolio Modeler • Decided Property Scenario • Baseline May 2026
             </p>
           </div>
 
@@ -3133,17 +1447,7 @@ export default function App() {
                 <Icons.TrendUp className="w-4 h-4" />
                 When the dust settles
               </button>
-              <button
-                onClick={() => setActiveTab("propertyResearch")}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
-                  activeTab === "propertyResearch"
-                    ? "bg-blue-900 text-white shadow-sm"
-                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
-                }`}
-              >
-                <Icons.Home className="w-4 h-4" />
-                Property Research
-              </button>
+
               <button
                 onClick={() => setActiveTab("futureExpenses")}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
@@ -3154,6 +1458,18 @@ export default function App() {
               >
                 <Icons.Calendar className="w-4 h-4" />
                 Future Expenses
+              </button>
+
+              <button
+                onClick={() => setActiveTab("paulan")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-serif font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer ${
+                  activeTab === "paulan"
+                    ? "bg-emerald-900 text-white shadow-sm"
+                    : "text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                }`}
+              >
+                <Icons.Home className="w-4 h-4" />
+                Paulan Sell/Rent
               </button>
             </div>
 
@@ -3186,6 +1502,39 @@ export default function App() {
                       </svg>
                       Print Sheet (A4)
                     </button>
+                  </div>
+                </div>
+
+                {/* DECIDED PROPERTY HIGHLIGHT BANNER */}
+                <div className="bg-emerald-50/60 border border-emerald-150 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-emerald-100 text-emerald-800 rounded border border-emerald-200 shadow-xs mt-0.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider font-sans block">
+                        Decided Property Focus
+                      </span>
+                      <h4 className="font-bold text-slate-900 font-serif text-sm">
+                        {DECIDED_PROPERTY_ADDRESS}
+                      </h4>
+                      <p className="text-[11px] text-stone-500 mt-0.5 font-sans">
+                        Premium multigenerational acreage property selected for purchase settlement.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4 border-t sm:border-t-0 sm:border-l border-stone-200 pt-3 sm:pt-0 sm:pl-6 text-xs font-serif shrink-0">
+                    <div>
+                      <span className="text-stone-400 block text-[10px] uppercase font-sans">Purchase Price</span>
+                      <strong className="text-blue-900 font-mono text-sm">${inputs.purchasePrice.toLocaleString()}</strong>
+                    </div>
+                    <div>
+                      <span className="text-stone-400 block text-[10px] uppercase font-sans">Loan Interest Rate</span>
+                      <strong className="text-emerald-800 font-mono text-sm">{inputs.interestRate}% p.a.</strong>
+                    </div>
                   </div>
                 </div>
 
@@ -3661,2472 +2010,32 @@ export default function App() {
 
             {/* TAB CONTENTS */}
             <div className={`space-y-6 ${activeTab === "timeline" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
-              {/* SECTION 1: GANTT CHART SWIMLANES */}
-        <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-bold text-blue-900 font-serif">
-                Timeline
-              </h3>
-              <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
-                <strong>Drag any track's body left/right</strong> to shift delay
-                offsets, or drag the right handle{" "}
-                <span className="font-mono font-bold text-blue-900">||</span> to
-                scale stage durations. You can slide events completely out of
-                sequence to explore concurrent pathways.
-              </p>
+              <TimelineView
+                inputs={inputs}
+                setInputs={setInputs}
+                timeline={timeline}
+                finances={finances}
+                activeTab={activeTab}
+                isPaulanLinkedHovered={isPaulanLinkedHovered}
+                setIsPaulanLinkedHovered={setIsPaulanLinkedHovered}
+              />
             </div>
-            <div className="flex items-center gap-2 self-start sm:self-auto text-xs text-stone-500 bg-stone-100 px-3 py-1.5 rounded-lg border border-stone-200 font-mono">
-              Total Span:{" "}
-              <span className="font-bold text-blue-900">
-                {timeline.totalDurationDays} Days
-              </span>
-            </div>
-          </div>
-
-          {/* TIMELINE SCENARIOS CONTROLLER */}
-          <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl space-y-3 no-print">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200/60 pb-2">
-              <div className="flex items-center gap-2">
-                <Icons.Calendar className="w-4 h-4 text-blue-900" />
-                <span className="text-[11px] font-bold text-stone-750 uppercase tracking-wider font-serif">
-                  Save / Load Timeline Layouts
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
-                <input
-                  type="text"
-                  placeholder="Layout Name (e.g. Early Settlement)"
-                  value={newTimelineScenarioName}
-                  onChange={(e) => setNewTimelineScenarioName(e.target.value)}
-                  className="border border-stone-300 rounded bg-white px-2.5 py-1 text-xs font-sans focus:outline-none focus:ring-1 focus:ring-blue-900 flex-1 sm:flex-initial"
-                />
-                <button
-                  onClick={handleSaveTimelineScenario}
-                  className="bg-blue-900 hover:bg-blue-950 text-white font-serif font-semibold text-xs px-3.5 py-1 rounded transition shadow-sm cursor-pointer"
-                >
-                  Save Layout
-                </button>
-              </div>
-            </div>
-            
-            {/* Render Active Configurations with Load/Delete Controls */}
-            <div className="flex flex-wrap gap-2 items-center text-xs">
-              <span className="text-stone-500 font-serif italic text-[11px]">
-                Select Layout:
-              </span>
-              {timelineScenarios.map((sc, sIdx) => {
-                const isActive = TIMELINE_KEYS.every(
-                  (key) => sc.inputs[key] === inputs[key]
-                );
-
-                return (
-                  <div
-                    key={sIdx}
-                    className={`inline-flex items-center border rounded px-2.5 py-1 gap-1.5 transition-all ${
-                      isActive 
-                        ? "bg-blue-900 border-blue-900 text-white shadow-sm" 
-                        : "bg-white border-stone-200 text-stone-700 hover:border-stone-400"
-                    }`}
-                  >
-                    <button
-                      onClick={() => handleLoadTimelineScenario(sc)}
-                      className="font-semibold transition text-[11px] cursor-pointer text-left"
-                    >
-                      {sc.name}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteTimelineScenario(sc.name)}
-                      className={`font-semibold ml-1.5 text-xs cursor-pointer ${
-                        isActive ? "text-blue-200 hover:text-white" : "text-stone-400 hover:text-red-600"
-                      }`}
-                      title="Delete this layout"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* MONTH MATRIX */}
-          <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 relative select-none">
-            {/* MONTH HEADINGS */}
-            <div className="flex w-full text-center border-b border-stone-300 pb-2 mb-4 font-serif text-[11px] font-bold text-blue-900">
-              {timeline.monthAxis.map((m, idx) => (
-                <div
-                  key={idx}
-                  style={{ width: `${m.weight}%` }}
-                  className="border-r border-stone-200 last:border-0 truncate px-1"
-                >
-                  {m.name}
-                </div>
-              ))}
-            </div>
-
-            {/* MATRIX GRID LINES */}
-            <div className="absolute inset-0 top-12 bottom-4 flex pointer-events-none">
-              {timeline.monthAxis.map((m, idx) => (
-                <div
-                  key={idx}
-                  style={{ width: `${m.weight}%` }}
-                  className="border-r border-stone-200/40 h-full border-dashed"
-                ></div>
-              ))}
-            </div>
-
-            {/* TIMELINE SWIMLANES */}
-            <div
-              ref={ganttContainerRef}
-              className="space-y-6 relative z-10 py-1"
-            >
-              {/* SWIMLANE 1: MERYL'S TWIN RANGES SALE (GREEN THEME) */}
-              <div className="space-y-2 border-b border-stone-200/60 pb-4">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-emerald-900 font-bold flex items-center gap-1.5 font-serif">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-700"></span>
-                    Swimlane A: Meryl's Twin Ranges Sale (Concludes:{" "}
-                    {timeline.dates.merylSettle})
-                  </span>
-                  <div className="flex items-center gap-2 font-mono text-[11px]">
-                    <span className="text-[10px] text-stone-400">
-                      Shift Delay:
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="250"
-                      value={inputs.merylStartDelay}
-                      onChange={(e) =>
-                        handleInputChange(
-                          "merylStartDelay",
-                          parseInt(e.target.value) || 0
-                        )
-                      }
-                      className="w-10 text-center font-bold text-emerald-800 border border-stone-200 rounded bg-white py-0.5"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {/* Meryl Prep Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        1. Preparation (Twin Ranges House) - (
-                        {getGanttDateStr(timeline.merylPrepStart)} -{" "}
-                        {getGanttDateStr(timeline.merylPrepEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.merylPrepDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "merylPrepDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        className="bg-emerald-100 border-r-4 border-emerald-500 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-emerald-850 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          marginLeft: `${
-                            (timeline.merylPrepStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.merylPrepDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylPrepDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylPrepDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Prep (Ends: {timeline.dates.merylPrepEnd})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylPrepDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylPrepDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Meryl Campaign & Sale Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        2. Twin Ranges Sale Campaign - (
-                        {getGanttDateStr(timeline.merylCampaignStart)} -{" "}
-                        {getGanttDateStr(timeline.merylCampaignEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="7"
-                          max="180"
-                          value={inputs.merylCampaignDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "merylCampaignDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        className="bg-emerald-350 border-r-4 border-emerald-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          backgroundColor: "#34d399",
-                          marginLeft: `${
-                            (timeline.merylCampaignStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.merylCampaignDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylCampaignDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylCampaignDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Listing Campaign (Contract:{" "}
-                          {timeline.dates.merylContract})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylCampaignDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylCampaignDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Meryl Settlement Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        3. Twin Ranges Settlement Period - (
-                        {getGanttDateStr(timeline.merylSettleStart)} -{" "}
-                        {getGanttDateStr(timeline.merylSettleEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="14"
-                          max="180"
-                          value={inputs.merylSettleDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "merylSettleDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "merylStartDelay", "shift")
-                        }
-                        className="bg-emerald-800 border-r-4 border-emerald-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          backgroundColor: "#047857",
-                          marginLeft: `${
-                            (timeline.merylSettleStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.merylSettleDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylSettleDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylSettleDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Settlement (Cash Injection:{" "}
-                          {timeline.dates.merylSettle})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylSettleDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylSettleDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* GFI Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span className="flex items-center gap-1 text-emerald-700">
-                        <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block font-sans"></span>
-                        4. GFI - Granny Flat Investment Transfer - ({timeline.dates.gfiDate})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-stone-400 font-sans mr-1">Shift Offset:</span>
-                        <input
-                          type="number"
-                          value={inputs.gfiStartOffset}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "gfiStartOffset",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-emerald-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                        />
-                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-emerald-50/20 h-7 rounded-md border border-emerald-250/30 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "gfiStartOffset", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "gfiStartOffset", "shift")
-                        }
-                        className="bg-emerald-600 border-r-4 border-emerald-800 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          backgroundColor: "#16a34a",
-                          marginLeft: `${
-                            (timeline.gfiStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            Math.max(4.0, (1 / timeline.totalDurationDays) * 100)
-                          }%`,
-                        }}
-                      >
-                        <div className="absolute left-0 top-0 bottom-0 flex items-center pointer-events-none pl-1">
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pl-3 text-white">
-                          GFI Contribution Received (${inputs.merylContribution.toLocaleString()})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Meryl Renting Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span className="flex items-center gap-1 text-purple-700">
-                        <span className="w-2 h-2 rounded-full bg-purple-500 inline-block"></span>
-                        5. Meryl Renting Period (Temporary Lodging) - (
-                        {getGanttDateStr(timeline.merylRentStart)} -{" "}
-                        {getGanttDateStr(timeline.merylRentEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-stone-400 font-sans mr-1">Extend rent by:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.merylRentingExtraDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "merylRentingExtraDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-purple-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                        />
-                        <span className="text-[10px] text-stone-505 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-purple-50/20 h-7 rounded-md border border-purple-200/40 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "merylRentStartOffset", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "merylRentStartOffset", "shift")
-                        }
-                        className="border-r-4 border-purple-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing opacity-90"
-                        style={{
-                          backgroundColor: "#a855f7",
-                          marginLeft: `${
-                            (Math.max(0, timeline.merylRentStart) /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (Math.max(1, timeline.merylRentEnd - Math.max(0, timeline.merylRentStart)) /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylRentStartOffset", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylRentStartOffset", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1 text-white">
-                          Lodging Rental Period (~{Math.round(timeline.merylRentDays / 7)} Weeks)
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylRentingExtraDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "merylRentingExtraDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* SWIMLANE 2: FOREVER HOME PURCHASE (BLUE THEME) */}
-              <div className="space-y-2 border-b border-stone-200/60 pb-4">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-blue-900 font-bold flex items-center gap-1.5 font-serif">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-700"></span>
-                    Swimlane B: Forever Home Purchase & Reno (Concludes:{" "}
-                    {timeline.dates.moveEnd})
-                  </span>
-                  <div className="flex items-center gap-2 font-mono text-[11px]">
-                    <span className="text-[10px] text-stone-400">
-                      Shift Delay:
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      max="250"
-                      value={inputs.fhStartDelay}
-                      onChange={(e) =>
-                        handleInputChange(
-                          "fhStartDelay",
-                          parseInt(e.target.value) || 0
-                        )
-                      }
-                      className="w-10 text-center font-bold text-blue-800 border border-stone-200 rounded bg-white py-0.5"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {/* FH Settle Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        1. Forever Home Settlement Duration - (
-                        {getGanttDateStr(timeline.fhSettleStart)} -{" "}
-                        {getGanttDateStr(timeline.fhSettleEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.fhSettleDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "fhSettleDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        className="bg-blue-100 border-r-4 border-blue-500 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-blue-900 transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          marginLeft: `${
-                            (timeline.fhContractSign /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.fhSettleDays / timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "fhSettleDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "fhSettleDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Contract to Settlement ({timeline.dates.fhSettle})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "fhSettleDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "fhSettleDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* FH Reno Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        2. Post-Settlement Renovation Phase - (
-                        {getGanttDateStr(timeline.renoStart)} -{" "}
-                        {getGanttDateStr(timeline.renoEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.renoDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "renoDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        className="bg-blue-450 border-r-4 border-blue-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          backgroundColor: "#60a5fa",
-                          marginLeft: `${
-                            (timeline.renoStart / timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.renoDays / timeline.totalDurationDays) * 100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "renoDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "renoDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">Renovation Period</span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "renoDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "renoDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* FH Move Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        3. Household Move-In Block - (
-                        {getGanttDateStr(timeline.moveStart)} -{" "}
-                        {getGanttDateStr(timeline.moveEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.moveDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "moveDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-blue-800 bg-white border border-stone-200 rounded py-0.5"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        onMouseDown={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        onTouchStart={(e) =>
-                          startGanttDrag(e, "fhStartDelay", "shift")
-                        }
-                        className="bg-blue-900 border-r-4 border-blue-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative cursor-grab active:cursor-grabbing"
-                        style={{
-                          backgroundColor: "#1e3a8a",
-                          marginLeft: `${
-                            (timeline.moveStart / timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.moveDays / timeline.totalDurationDays) * 100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "moveDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "moveDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Move Complete ({timeline.dates.moveEnd})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "moveDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "moveDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* SWIMLANE 3: PAULAN COURT SALE (RED/PINK/MAROON THEME) */}
-              <div className={`space-y-2 pb-2 p-3.5 rounded-xl transition-all duration-300 ${
-                isPaulanLinkedHovered 
-                  ? "bg-rose-50 border border-rose-300 shadow-sm ring-1 ring-rose-500/20" 
-                  : "border border-stone-100 bg-stone-50/20"
-              }`}>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-rose-900 font-bold flex items-center gap-1.5 font-serif">
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-700 animate-pulse"></span>
-                    <span className={isPaulanLinkedHovered ? "text-rose-900 font-extrabold" : "text-rose-900"}>
-                      Swimlane C: Paulan Court Prep & Sale (Concludes: {timeline.dates.paulanSettle})
-                    </span>
-                  </span>
-                  <div className="flex items-center gap-2 font-mono text-[11px] bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200">
-                    <span className="text-[10px] font-sans font-semibold">🔗 Locked to B Move-out</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2">
-                  {/* Paulan Prep Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        1. Staging & Styling (Paulan Court) - (
-                        {getGanttDateStr(timeline.paulanPrepStart)} -{" "}
-                        {getGanttDateStr(timeline.paulanPrepEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.paulanPrepDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "paulanPrepDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        className="bg-pink-100 border-r-4 border-pink-400 h-full flex items-center justify-between pl-3 pr-1 text-[9px] font-bold text-pink-900 transition-all duration-75 relative"
-                        style={{
-                          marginLeft: `${
-                            (timeline.paulanPrepStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.paulanPrepDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <span className="truncate pr-1">Prep Paulan</span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanPrepDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanPrepDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Paulan Campaign Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        2. Marketing & Campaign Span - (
-                        {getGanttDateStr(timeline.paulanCampaignStart)} -{" "}
-                        {getGanttDateStr(timeline.paulanCampaignEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.paulanCampaignDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "paulanCampaignDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        className="bg-rose-450 border-r-4 border-rose-600 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
-                        style={{
-                          backgroundColor: "#fb7185",
-                          marginLeft: `${
-                            (timeline.paulanCampaignStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.paulanCampaignDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanCampaignDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanCampaignDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Marketing Campaign (Contract:{" "}
-                          {timeline.dates.paulanContract})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanCampaignDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanCampaignDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Paulan Settle Bar */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center text-[11px] text-stone-500 font-semibold font-serif">
-                      <span>
-                        3. Sale Settlement (Proceeds Released) - (
-                        {getGanttDateStr(timeline.paulanSettleStart)} -{" "}
-                        {getGanttDateStr(timeline.paulanSettleEnd)})
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="365"
-                          value={inputs.paulanSettleDays}
-                          onChange={(e) =>
-                            handleInputChange(
-                              "paulanSettleDays",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="w-12 text-center text-xs font-bold font-mono text-rose-800 bg-white border border-stone-200 rounded py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                        />
-                        <span className="text-[10px] text-stone-500 font-sans">Days</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-stone-200/40 h-7 rounded-md border border-stone-250 relative flex items-center overflow-hidden">
-                      <div
-                        className="bg-rose-900 border-r-4 border-rose-950 h-full flex items-center justify-between pl-[18px] pr-1 text-[9px] font-bold text-white transition-all duration-75 relative"
-                        style={{
-                          backgroundColor: "#881337",
-                          marginLeft: `${
-                            (timeline.paulanSettleStart /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                          width: `${
-                            (inputs.paulanSettleDays /
-                              timeline.totalDurationDays) *
-                            100
-                          }%`,
-                        }}
-                      >
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanSettleDays", "dragStart");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanSettleDays", "dragStart");
-                          }}
-                          className="absolute left-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                        <span className="truncate pr-1">
-                          Proceeds Cash Released ({timeline.dates.paulanSettle})
-                        </span>
-                        <div
-                          onMouseDown={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanSettleDays", "resize");
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            startGanttDrag(e, "paulanSettleDays", "resize");
-                          }}
-                          className="absolute right-0 top-0 bottom-0 flex items-center"
-                        >
-                          <Icons.DragHandle />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SECTION 1.5: HIGH-FIDELITY TRANSITION COSTS & STRATEGIES */}
-        <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-          <div className="border-b border-stone-200 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-bold text-amber-900 font-serif flex items-center gap-2">
-                <span className="p-1 px-2 rounded bg-amber-50 text-xs text-amber-800 font-sans tracking-wide uppercase font-semibold">Section 1.5</span>
-                Transition Period Costs & Risks
-              </h3>
-              <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
-                Analyze and mitigate financial friction during the high-stress bridge/transition phase before both assets liquidate.
-              </p>
-            </div>
-            
-            {/* Quick Warning Badge */}
-            <div className="flex items-center gap-1.5 self-start sm:self-auto">
-              {finances.transitionDoubleMortgageWeeks > 0 ? (
-                <span className="text-[11px] font-sans font-semibold bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-md animate-pulse flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
-                  Parallel Loan Overlap: {finances.transitionDoubleMortgageWeeks} Weeks
-                </span>
-              ) : (
-                <span className="text-[11px] font-sans font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                  Safe Sequence: No Parallel Mortgages
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left: Transition Inputs and Recast Selector */}
-            <div className="lg:col-span-5 space-y-5">
-              <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans border-b border-stone-100 pb-1">
-                Transition Cashflow Configuration
-              </h4>
-              
-              {/* Meryl Weekly Rent */}
-              <div className="p-3.5 bg-amber-50/20 border border-amber-200/40 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-stone-700 font-serif">Meryl Out-of-Pocket Rent</span>
-                  <div className="flex items-center gap-1 font-mono">
-                    <span className="text-[10px] text-stone-400 font-sans">Cost:</span>
-                    <span className="text-amber-800 font-bold">${inputs.merylRentCostPerWeek}/wk</span>
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1000"
-                  step="25"
-                  value={inputs.merylRentCostPerWeek}
-                  onChange={(e) => handleInputChange("merylRentCostPerWeek", parseInt(e.target.value) || 0)}
-                  className="w-full accent-amber-600 cursor-pointer"
-                />
-                <p className="text-[10px] text-stone-400 font-sans leading-tight">
-                  Cost incurred during Meryl's temporary accommodation. Currently active for{" "}
-                  <strong className="text-amber-850 font-mono">{Math.round(timeline.merylRentDays / 7)} weeks</strong>{" "}
-                  (includes any extensions).
-                </p>
-              </div>
-
-              {/* Recast Trigger selector */}
-              <div className="space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans">
-                    Mortgage Recast Trigger
-                  </span>
-                  <span className="text-[10px] font-sans bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded border border-stone-200">
-                    Strategy Impact
-                  </span>
-                </div>
-                
-                <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => handleInputChange("recastTriggerEvent", "day1")}
-                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
-                      inputs.recastTriggerEvent === "day1"
-                        ? "bg-blue-50/80 border-blue-400 shadow-sm"
-                        : "bg-white border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      checked={inputs.recastTriggerEvent === "day1"}
-                      readOnly
-                      className="mt-0.5 mr-2 accent-blue-850"
-                    />
-                    <div>
-                      <div className="font-bold text-blue-900 font-serif">Option A: Immediate recast (Day 1)</div>
-                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
-                        Reduce principal right away using current surplus offsets. Maximizes interest savings but lowers liquid cushion reserves early.
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => handleInputChange("recastTriggerEvent", "gfi")}
-                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
-                      inputs.recastTriggerEvent === "gfi"
-                        ? "bg-emerald-50/80 border-emerald-400 shadow-sm"
-                        : "bg-white border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      checked={inputs.recastTriggerEvent === "gfi"}
-                      readOnly
-                      className="mt-0.5 mr-2 accent-emerald-850"
-                    />
-                    <div>
-                      <div className="font-bold text-emerald-900 font-serif">Option B: Upon Twin Ranges Settlement</div>
-                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
-                        Trigger recast after Meryl's Twin Ranges sale concludes & grandmother flat proceeds are deposited. Keeps buffers wider during pre-sale stress.
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => handleInputChange("recastTriggerEvent", "paulan")}
-                    className={`flex items-start text-left p-2.5 border rounded-lg transition text-xs ${
-                      inputs.recastTriggerEvent === "paulan"
-                        ? "bg-rose-50/80 border-rose-400 shadow-sm"
-                        : "bg-white border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      checked={inputs.recastTriggerEvent === "paulan"}
-                      readOnly
-                      className="mt-0.5 mr-2 accent-rose-850"
-                    />
-                    <div>
-                      <div className="font-bold text-rose-900 font-serif">Option C: Double Settlement Concluded</div>
-                      <div className="text-[10px] text-stone-505 font-sans leading-normal mt-0.5">
-                        Recast only after BOTH Meryl & Paulan properties complete. Highly conservative, maintaining maximum liquidity at the expense of interest leakage.
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Analytical Metrics Summary and Interactive Weekly Simulated Log */}
-            <div className="lg:col-span-7 space-y-4">
-              <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider font-sans border-b border-stone-100 pb-1">
-                Friction & Interest Leak Analytics
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Metric 1: Double Mortgage Span */}
-                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1 relative overflow-hidden">
-                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
-                    Parallel Loan Overlap
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-rose-850 font-mono tracking-tight">
-                      {finances.transitionDoubleMortgageWeeks}
-                    </span>
-                    <span className="text-xs text-stone-500 font-serif">Weeks</span>
-                  </div>
-                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
-                    Duration where both the Forever Home & Paulan Court mortgages are active concurrently.
-                  </p>
-                  
-                  {finances.transitionDoubleMortgageWeeks > 12 && (
-                    <div className="absolute right-2 top-2 bg-rose-100 text-rose-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-rose-200 tracking-tight animate-pulse">
-                      ⚠️ Severe Tension
-                    </div>
-                  )}
-                  {finances.transitionDoubleMortgageWeeks > 0 && finances.transitionDoubleMortgageWeeks <= 12 && (
-                    <div className="absolute right-2 top-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-amber-200 tracking-tight">
-                      ⚠️ Caution Overlap
-                    </div>
-                  )}
-                  {finances.transitionDoubleMortgageWeeks === 0 && (
-                    <div className="absolute right-2 top-2 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200 tracking-tight">
-                      🛡️ Safe Path
-                    </div>
-                  )}
-                </div>
-
-                {/* Metric 2: Meryl Lodging Rent Total */}
-                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1">
-                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
-                    Total Out-of-pocket Rent
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-amber-800 font-mono tracking-tight">
-                      ${Math.round(finances.totalMerylRentInTransition).toLocaleString()}
-                    </span>
-                    <span className="text-xs text-stone-505 font-serif">Total</span>
-                  </div>
-                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
-                    Outflow for Meryl over {finances.transitionMerylWeeks} rent weeks at ${inputs.merylRentCostPerWeek}/wk.
-                  </p>
-                </div>
-
-                {/* Metric 3: Peak Weekly Outflow Cashflow Pain */}
-                <div className="p-4 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1 relative">
-                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
-                    Peak Weekly Transitional Outflow
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-blue-900 font-mono tracking-tight">
-                      ${Math.round(finances.maxWeeklyRepaymentInTransition).toLocaleString()}
-                    </span>
-                    <span className="text-xs text-stone-550 font-sans font-mono text-stone-400">/wk</span>
-                  </div>
-                  <p className="text-[10px] text-stone-505 text-stone-505 font-sans leading-normal">
-                    Highest Combined weekly outflows during bridge. Normal is ${Math.round(finances.recastWeeklyPayment)}/wk.
-                  </p>
-                </div>
-
-                {/* Metric 4: Cumulative Transition Interest paid */}
-                <div className="p-4 bg-stone-55 bg-stone-50/80 rounded-xl border border-stone-200 space-y-1">
-                  <div className="text-[10px] text-stone-400 uppercase tracking-wider font-semibold font-sans">
-                    Frictional Interest Paid
-                  </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-2xl font-black text-red-700 font-mono tracking-tight">
-                      ${Math.round(finances.cumulativeTransitionInterest).toLocaleString()}
-                    </span>
-                    <span className="text-xs text-stone-505 font-serif">Interest</span>
-                  </div>
-                  <p className="text-[10px] text-stone-505 font-sans leading-normal">
-                    Total interest drained across all mortgages until transition settles. Minimizing this is critical!
-                  </p>
-                </div>
-              </div>
-
-              {/* Dynamic Warning Card */}
-              {finances.transitionDoubleMortgageWeeks > 4 && (
-                <div className="p-3 bg-red-50 border border-red-220 rounded-xl text-xs space-y-1 text-red-950 font-serif">
-                  <div className="font-bold flex items-center gap-1">
-                    <span>⚠️ Extreme Cashflow Restriction Warning</span>
-                  </div>
-                  <p className="text-[11px] font-sans text-red-900 leading-normal">
-                    You have <strong className="font-mono">{finances.transitionDoubleMortgageWeeks} weeks</strong> of dual-mortgage parallel liabilities. During this peak period, your family combined mandatory outflows spike to <strong className="font-mono text-rose-800">${Math.round(finances.maxWeeklyRepaymentInTransition)}/wk</strong>. Make sure you maintain a robust cash offset cushion (minimum ${inputs.offsetBuffer.toLocaleString()}) to shield against unexpected delays before Meryl or Paulan Court property settlement injects major liquidity.
-                  </p>
-                </div>
-              )}
-              {finances.transitionDoubleMortgageWeeks > 0 && finances.transitionDoubleMortgageWeeks <= 4 && (
-                <div className="p-3 bg-amber-50 border border-amber-220 rounded-xl text-xs space-y-1 text-amber-950 font-serif">
-                  <div className="font-bold flex items-center gap-1">
-                    <span>⚠️ Manageable Parallel Mortgage Exposure</span>
-                  </div>
-                  <p className="text-[11px] font-sans text-amber-900 leading-normal">
-                    A short {finances.transitionDoubleMortgageWeeks}-week dual-mortgage period exists. Ensure smooth paperwork alignment to avoid settlement slippage which would further extend this cashflow friction.
-                  </p>
-                </div>
-              )}
-              {finances.transitionDoubleMortgageWeeks === 0 && (
-                <div className="p-3 bg-emerald-50 border border-emerald-250 rounded-xl text-xs space-y-1 text-emerald-950 font-serif">
-                  <div className="font-bold flex items-center gap-1 text-emerald-900">
-                    <span>🛡️ Optimally Aligned Non-Overlapping Path</span>
-                  </div>
-                  <p className="text-[11px] font-sans text-emerald-900 leading-normal">
-                    Excellent scheduling! By timing settlements sequence beautifully, you have completely eliminated parallel mortgage liabilities, keeping running outflows strictly neutralized.
-                  </p>
-                </div>
-              )}
-
-              {/* Collapsible/Scrollable Weekly Transition Log table */}
-              <div className="border border-stone-200 rounded-xl overflow-hidden bg-white">
-                <div className="bg-stone-50 px-4 py-2 flex justify-between items-center border-b border-stone-200">
-                  <span className="text-xs font-bold text-stone-700 font-serif">
-                    Weekly Simulated Transition Database Log
-                  </span>
-                  <span className="text-[10px] font-mono text-stone-400">
-                    {finances.transitionWeeksData.length} Weeks Modeled
-                  </span>
-                </div>
-                
-                <div className="max-h-[320px] overflow-y-auto divide-y divide-stone-100 text-[11px]">
-                  {finances.transitionWeeksData.map((wData: any) => (
-                    <div 
-                      key={wData.week} 
-                      className={`px-4 py-2 grid grid-cols-12 gap-1 items-center font-mono ${
-                        wData.doubleMortgage 
-                          ? "bg-rose-50/40 hover:bg-rose-50" 
-                          : wData.hasRentThisWeek 
-                          ? "bg-amber-50/30 hover:bg-amber-50" 
-                          : "hover:bg-stone-50"
-                      }`}
-                    >
-                      {/* Week index & date */}
-                      <div className="col-span-3 font-sans">
-                        <div className="font-bold text-slate-800">Week {wData.week}</div>
-                        <div className="text-[9px] text-stone-400">{wData.dateStr}</div>
-                      </div>
-
-                      {/* State Pills */}
-                      <div className="col-span-3 flex flex-wrap gap-1 font-sans">
-                        {wData.doubleMortgage && (
-                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-rose-100 text-rose-700 uppercase tracking-tight">
-                            Double Loan
-                          </span>
-                        )}
-                        {wData.hasRentThisWeek && (
-                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-100 text-amber-700 uppercase tracking-tight">
-                            Rent Active
-                          </span>
-                        )}
-                        {wData.isRecast && (
-                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-blue-100 text-blue-700 uppercase tracking-tight">
-                            Recast
-                          </span>
-                        )}
-                        {!wData.fhOpened && (
-                          <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-stone-100 text-stone-500 uppercase tracking-tight">
-                            Pre-Purchase
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Weekly repayments */}
-                      <div className="col-span-3 text-right font-semibold">
-                        <div className="text-slate-850">${Math.round(wData.totalRepay).toLocaleString()}</div>
-                        <div className="text-[9px] text-stone-400 font-sans font-normal">Mandatory</div>
-                      </div>
-
-                      {/* Interest Leak count */}
-                      <div className="col-span-3 text-right">
-                        <div className="text-red-700 font-bold">${Math.round(wData.totalInterest).toLocaleString()}</div>
-                        <div className="text-[9px] text-stone-400 font-sans font-normal">Interest cost</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-            </div>
-
             <div className={`space-y-6 ${activeTab === "mortgage" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
-
-        {/* SECTION 2: INPUT CENTER & AFFORDABILITY ENGINE */}
-        <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-200 pb-3">
-            <div className="flex items-center gap-2">
-              <Icons.Settings className="w-5 h-5 text-blue-900" />
-              <h3 className="font-bold text-blue-900 text-lg font-serif">
-                Capital Sourcing & Price Parameters
-              </h3>
-            </div>
-
-            {/* Save Scenario UI */}
-            <div className="flex items-center gap-2 no-print flex-wrap">
-              <input
-                type="text"
-                placeholder="Scenario Title (e.g. Dream Block)"
-                value={newScenarioName}
-                onChange={(e) => setNewScenarioName(e.target.value)}
-                className="border border-stone-300 rounded px-3 py-1.5 text-xs font-sans focus:outline-none focus:ring-1 focus:ring-blue-900"
+              <ScenarioControls
+                inputs={inputs}
+                setInputs={setInputs}
+                handleInputChange={handleInputChange}
+                finances={finances}
+                newScenarioName={newScenarioName}
+                setNewScenarioName={setNewScenarioName}
+                financialScenarios={financialScenarios}
+                handleSaveFinancialScenario={handleSaveFinancialScenario}
+                handleLoadFinancialScenario={handleLoadFinancialScenario}
+                handleDeleteFinancialScenario={handleDeleteFinancialScenario}
+                isPaulanLinkedHovered={isPaulanLinkedHovered}
+                setIsPaulanLinkedHovered={setIsPaulanLinkedHovered}
+                handleExportHtmlReport={handleExportHtmlReport}
               />
-              <button
-                onClick={handleSaveFinancialScenario}
-                className="bg-blue-900 hover:bg-blue-950 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm cursor-pointer"
-              >
-                Save Scenario
-              </button>
-              <button
-                onClick={handleExportHtmlReport}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white font-serif font-semibold text-xs px-4 py-1.5 rounded transition shadow-sm flex items-center gap-1.5 cursor-pointer"
-                title="Download this exact modeling configuration as a self-contained HTML document"
-              >
-                <Icons.TrendUp className="w-3.5 h-3.5" />
-                Export HTML Report
-              </button>
-            </div>
-          </div>
-
-          {/* Saved Configuration Badges */}
-          {financialScenarios.length > 0 && (
-            <div className="flex flex-wrap gap-2 items-center text-xs border-b border-stone-100 pb-4 no-print">
-              <span className="text-stone-500 font-serif italic text-[11px]">
-                Saved Configurations:
-              </span>
-              {financialScenarios.map((sc, sIdx) => {
-                const isActive = (Object.keys(inputs) as (keyof PropertyInputs)[]).every(
-                  (key) => TIMELINE_KEYS.includes(key) || sc.inputs[key] === inputs[key]
-                );
-
-                return (
-                  <div
-                    key={sIdx}
-                    className={`inline-flex items-center border rounded px-2.5 py-1 gap-1.5 transition-all ${
-                      isActive 
-                        ? "bg-blue-900 border-blue-900 text-white shadow-sm font-semibold" 
-                        : "bg-white border-stone-200 text-stone-700 hover:border-stone-400"
-                    }`}
-                  >
-                    <button
-                      onClick={() => handleLoadFinancialScenario(sc)}
-                      className="transition text-[11px] cursor-pointer text-left"
-                    >
-                      {sc.name}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteFinancialScenario(sc.name)}
-                      className={`font-semibold ml-1.5 text-xs cursor-pointer ${
-                        isActive ? "text-blue-200 hover:text-white" : "text-stone-400 hover:text-red-600"
-                      }`}
-                      title="Delete this scenario"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* INPUT SLIDERS & PROGRAMMATIC WATERFALL PRIORITY */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* COLUMN 1: Forever Home Price & Paulan Sourcing Info */}
-            <div className="space-y-4">
-              <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-stone-700 font-serif">
-                    New Residence Purchase Price
-                  </span>
-                  <span className="text-blue-900 font-bold font-mono">
-                    ${inputs.purchasePrice.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={1000000}
-                  max={finances.maxAffordablePrice}
-                  step={10000}
-                  value={inputs.purchasePrice}
-                  onChange={(e) =>
-                    handleInputChange("purchasePrice", parseInt(e.target.value))
-                  }
-                  className="w-full accent-blue-900 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-serif">
-                  <span>Min: $1.0M</span>
-                  <span className="font-semibold text-amber-700 font-mono">
-                    Max: ${(finances.maxAffordablePrice / 1000000).toFixed(3)}M
-                  </span>
-                </div>
-              </div>
-
-              {/* READ-ONLY PROGRAMMATIC OUTPUT: PAULAN PULLED */}
-              <div className="p-3.5 bg-stone-50/40 rounded-xl border border-stone-200 text-xs font-serif space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-500 font-medium">Paulan Offset Sourced (Day 1)</span>
-                  <span className="font-mono font-bold text-stone-700 font-mono">
-                    ${Math.round(finances.paulanOffsetPulled).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-[10px] text-stone-400">
-                  Automated pull derived via the waterfall algorithm to satisfy settlement equity gap.
-                </p>
-                {finances.paulanOffsetPulled > 0 && (
-                  <p className="text-[9.5px] text-rose-700 bg-rose-50/50 p-1.5 rounded border border-rose-100 italic leading-snug">
-                    ⚠️ Triggers 6.18% interest on the remaining uninsulated{" "}
-                    <strong>
-                      ${Math.round(
-                        ACCOUNT_BALANCES.paulansLoan - (ACCOUNT_BALANCES.paulansOffset - finances.paulanOffsetPulled)
-                      ).toLocaleString()}
-                    </strong>{" "}
-                    of Paulan Court Loan until its contract of sale settles.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* COLUMN 2: Target Cushion & Fern Sourcing Info */}
-            <div className="space-y-4">
-              <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-stone-700 font-serif">
-                    Cash Cushion Buffer Target
-                  </span>
-                  <span className="text-amber-700 font-bold font-mono">
-                    ${inputs.offsetBuffer.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(
-                    0,
-                    619830 - finances.minCashRequiredForSettlement
-                  )}
-                  step={5000}
-                  value={inputs.offsetBuffer}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "offsetBuffer",
-                      parseInt(e.target.value) || 0
-                    )
-                  }
-                  className="w-full accent-amber-700 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400">
-                  <span>Min: $0</span>
-                  <span>
-                    Limit: $
-                    {Math.round(
-                      Math.max(0, 619830 - finances.minCashRequiredForSettlement)
-                    ).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              {/* READ-ONLY PROGRAMMATIC OUTPUT: FERN PULLED */}
-              <div className="p-3.5 bg-stone-50/40 rounded-xl border border-stone-200 text-xs font-serif space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-500 font-medium">Fern St Offset Sourced (Day 1)</span>
-                  <span className="font-mono font-bold text-stone-700 font-mono">
-                    ${Math.round(finances.fernOffsetPulled).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-[10px] text-stone-400">
-                  Automated pull derived via the waterfall algorithm to satisfy settlement equity gap.
-                </p>
-                {finances.fernOffsetPulled > 0 && (
-                  <p className="text-[9.5px] text-rose-700 bg-rose-50/50 p-1.5 rounded border border-rose-100 italic leading-snug">
-                    ⚠️ Triggers 6.15% interest on the remaining uninsulated{" "}
-                    <strong>
-                      ${Math.round(
-                        ACCOUNT_BALANCES.fernLoan - (ACCOUNT_BALANCES.fernOffset - finances.fernOffsetPulled)
-                      ).toLocaleString()}
-                    </strong>{" "}
-                    of Fern St Loan post-Day 1.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* COLUMN 3: Variable Interest Rate & Sourcing Waterfall Priority */}
-            <div className="space-y-4">
-              <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-stone-700 font-serif">
-                    Variable Interest Rate
-                  </span>
-                  <span className="text-blue-900 font-bold font-mono">
-                    {inputs.interestRate}% p.a.
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={4.0}
-                  max={12.15}
-                  step={0.05}
-                  value={inputs.interestRate}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "interestRate",
-                      parseFloat(e.target.value)
-                    )
-                  }
-                  className="w-full accent-blue-900 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400">
-                  <span>4.0%</span>
-                  <span>12.15% p.a.</span>
-                </div>
-              </div>
-
-              {/* USER-SELECTABLE PRIORITY DEPLETER TOGGLE */}
-              <div className="p-3 bg-stone-50/70 rounded-xl border border-stone-200 text-xs font-serif space-y-2">
-                <span className="text-stone-700 font-semibold block text-[11px]">
-                  Deposit Sourcing Priority Toggle
-                </span>
-                <div className="grid grid-cols-2 gap-2 no-print">
-                  <button
-                    onClick={() => setInputs(prev => adjustInputs({ ...prev, depletionPriorityToggle: "paulan" }))}
-                    className={`px-2 py-1.5 rounded border text-center font-serif text-[10.5px] font-medium transition-all ${
-                      inputs.depletionPriorityToggle === "paulan"
-                        ? "bg-blue-900 text-white border-blue-950 shadow-sm"
-                        : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    Empty Paulan First
-                  </button>
-                  <button
-                    onClick={() => setInputs(prev => adjustInputs({ ...prev, depletionPriorityToggle: "fern" }))}
-                    className={`px-2 py-1.5 rounded border text-center font-serif text-[10.5px] font-medium transition-all ${
-                      inputs.depletionPriorityToggle === "fern"
-                        ? "bg-blue-900 text-white border-blue-950 shadow-sm"
-                        : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
-                    }`}
-                  >
-                    Empty Fern First
-                  </button>
-                </div>
-                <div className="text-[9.5px] text-stone-400 leading-normal">
-                  Sets which offset is drawn down first to cover settlement outlays, maximizing isolation on other loans.
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* CONCURRENT DEPOSIT AND DEBT METRICS CARD (RE-DESIGNED DAY 1 CAPITAL FLOW & BALANCE LEDGER) */}
-          <div className="bg-stone-50 p-6 rounded-xl border border-stone-200 space-y-6">
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-blue-950 uppercase tracking-wider font-serif block">
-                Day 1 Capital Flow & Balance Ledger
-              </span>
-              <p className="text-xs text-stone-500 font-serif leading-relaxed">
-                Prior to selling Paulan Court and receiving Meryl's contribution, you utilize your starting cash reserves to settle the Forever Home purchase on Day 1. This settlement draws down your starting offset balances and establishes initial mortgage debt.
-              </p>
-            </div>
-
-            {/* Dynamic Alert Banner for Target Buffer Compromise */}
-            {finances.gfiBeforeFHSettle && (
-              <div className="bg-[#0c2a18] border-l-4 border-emerald-600 text-emerald-50 p-4 rounded-r-lg text-xs font-serif leading-relaxed space-y-1 shadow-sm mb-4">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block"></span>
-                  <span>GFI Early Settlement Advantage Active</span>
-                </div>
-                <p className="opacity-90">
-                  Because the <strong>GFI Event (Meryl's Contribution Transfer)</strong> settles before the Forever Home transaction, her capital contribution of <strong className="font-mono text-emerald-300">${inputs.merylContribution.toLocaleString()}</strong> is received early and counted towards your Day 1 offset buffer reserves. This secures your available cash buffer during the purchase transaction!
-                </p>
-              </div>
-            )}
-
-            {finances.isBufferCompromised && (
-              <div className="bg-[#590d0d] border-l-4 border-red-600 text-red-50 p-4 rounded-r-lg text-xs font-serif leading-relaxed space-y-1 shadow-md animate-pulse">
-                <div className="flex items-center gap-1.5 font-bold text-red-100">
-                  <Icons.Warning className="w-4.5 h-4.5 text-red-400 flex-shrink-0" />
-                  <span>
-                    Strategy Alert: Settlement requirements compromise your targeted ${inputs.offsetBuffer.toLocaleString()} cash margin buffer.
-                  </span>
-                </div>
-                <p className="opacity-90">
-                  Your actual remaining Day 1 Cash Cushion drops to{" "}
-                  <strong className="font-mono text-red-200">
-                    ${Math.round(finances.remainingDay1CashCushion).toLocaleString()}
-                  </strong>{" "}
-                  because of mandatory state acquisition stamp duty fees of{" "}
-                  <strong className="font-mono">${Math.round(finances.stampDuty).toLocaleString()}</strong>{" "}
-                  and standard concurrent lending limits. Consider lowering the price slider or adjusting your safety cushion targets to align this strategy.
-                </p>
-              </div>
-            )}
-
-            {/* PREMIUM VISUAL SANKEY-STYLE CAPITAL FLOW MAP */}
-            <div className="bg-[#141517] p-6 rounded-xl border border-stone-800 text-white shadow-lg space-y-4">
-              <h4 className="text-xs font-bold text-stone-400 uppercase tracking-wider text-center font-serif">
-                Day 1 Capital Flow Routing (Sankey Conceptual Map)
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                {/* 1. SOURCES */}
-                <div className="space-y-3">
-                  <div className="text-center pb-1 text-[11px] font-bold uppercase tracking-wide text-blue-400 border-b border-stone-800 font-sans">
-                    Capital Sources
-                  </div>
-                  {/* Paulan Offset */}
-                  <div className="bg-stone-900/90 p-3 rounded-lg border border-stone-800 space-y-1">
-                    <div className="flex justify-between text-[11px] font-serif">
-                      <span className="text-stone-300">Paulan Offset Cash</span>
-                      <span className="font-mono font-semibold text-emerald-400">${Math.round(finances.paulanOffsetPulled).toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-emerald-500 h-full transition-all" 
-                        style={{ width: `${(finances.paulanOffsetPulled / 381456) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-[9px] text-stone-500 text-right">Drawing {Math.round((finances.paulanOffsetPulled / 381456) * 100)}% of $381k</div>
-                  </div>
-
-                  {/* Fern Offset */}
-                  <div className="bg-stone-900/90 p-3 rounded-lg border border-stone-800 space-y-1">
-                    <div className="flex justify-between text-[11px] font-serif">
-                      <span className="text-stone-300">Fern St Offset Cash</span>
-                      <span className="font-mono font-semibold text-emerald-400">${Math.round(finances.fernOffsetPulled).toLocaleString()}</span>
-                    </div>
-                    {(() => {
-                      const maxFernOffset = 238374 + (finances.gfiBeforeFHSettle ? inputs.merylContribution : 0);
-                      const pct = maxFernOffset > 0 ? Math.round((finances.fernOffsetPulled / maxFernOffset) * 100) : 0;
-                      return (
-                        <>
-                          <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-emerald-500 h-full transition-all" 
-                              style={{ width: `${pct}%` }}
-                            ></div>
-                          </div>
-                          <div className="text-[9px] text-stone-500 text-right">Drawing {pct}% of ${(maxFernOffset / 1000).toFixed(0)}k</div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {/* New Primary Mortgage */}
-                  <div className="bg-stone-900/90 p-3 rounded-lg border border-stone-800 space-y-1">
-                    <div className="flex justify-between text-[11px] font-serif">
-                      <span className="text-stone-300">Concurrent Loan</span>
-                      <span className="font-mono font-semibold text-blue-400">${Math.round(finances.loanRequired).toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-blue-500 h-full transition-all" 
-                        style={{ width: `${(finances.loanRequired / 1500000) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-[9px] text-stone-500 text-right">Leverage: {Math.round((finances.loanRequired / 1500000) * 100)}% of $1.5M Cap</div>
-                  </div>
-                </div>
-
-                {/* 2. CHANNELS (PURE SVG CONNECTORS) */}
-                <div className="hidden md:flex flex-col justify-center items-center h-full relative px-2">
-                  <svg className="w-full h-40" viewBox="0 0 200 160" fill="none">
-                    <defs>
-                      <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#34d399" stopOpacity="0.4" />
-                        <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0.4" />
-                      </linearGradient>
-                      <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.4" />
-                        <stop offset="100%" stopColor="#1e3a8a" stopOpacity="0.4" />
-                      </linearGradient>
-                    </defs>
-                    {/* Top Sourced flow to Outlay */}
-                    <path d="M 10 30 C 80 30, 80 80, 190 80" stroke="url(#g1)" strokeWidth="6" />
-                    {/* Mid Sourced flow to Outlay */}
-                    <path d="M 10 75 C 80 75, 80 80, 190 80" stroke="url(#g1)" strokeWidth="4" />
-                    {/* Bottom Sourced flow to Outlay */}
-                    <path d="M 10 120 C 80 120, 80 80, 190 80" stroke="url(#g2)" strokeWidth="10" />
-                    
-                    {/* Sourced flow to Cushions */}
-                    <path d="M 10 30 C 100 30, 100 135, 190 135" stroke="#10b981" strokeWidth="2" strokeDasharray="3,3" opacity="0.6"/>
-                    <path d="M 10 75 C 100 75, 100 135, 190 135" stroke="#10b981" strokeWidth="2" strokeDasharray="3,3" opacity="0.6"/>
-                  </svg>
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-stone-950 border border-stone-800 text-[10px] font-bold font-mono px-2 py-1 rounded-full shadow z-10 text-stone-300">
-                    CONCURRENT SETTLEMENT
-                  </div>
-                </div>
-
-                {/* 3. DESTINATIONS */}
-                <div className="space-y-3">
-                  <div className="text-center pb-1 text-[11px] font-bold uppercase tracking-wide text-amber-400 border-b border-stone-800 font-sans">
-                    Capital Destinations
-                  </div>
-                  {/* Outlays (Total Acquisition) */}
-                  <div className="bg-stone-900/90 p-3.5 rounded-lg border border-stone-800 text-left">
-                    <span className="text-[9px] uppercase font-bold text-stone-400 block font-sans">
-                      Mandatory Day 1 Outlay
-                    </span>
-                    <span className="text-sm font-bold text-blue-300 font-mono block">
-                      ${Math.round(finances.totalAcquisitionCost).toLocaleString()}
-                    </span>
-                    <div className="text-[10px] text-stone-400 mt-1.5 font-serif space-y-0.5 leading-tight">
-                      <div>• Forever Home: ${inputs.purchasePrice.toLocaleString()}</div>
-                      <div>• Stamp Duty (Vic): ${Math.round(finances.stampDuty).toLocaleString()}</div>
-                      <div>• Legal / Transfer Fees: $5,000</div>
-                    </div>
-                  </div>
-
-                  {/* Day 1 Safety Cushion Left Behind */}
-                  <div className="bg-emerald-950/45 p-3.5 rounded-lg border border-emerald-900/70 text-left">
-                    <span className="text-[9px] uppercase font-bold text-emerald-400 block font-sans">
-                      Retained Day 1 Cash Cushion
-                    </span>
-                    <span className="text-sm font-bold text-emerald-400 font-mono block">
-                      ${Math.round(finances.remainingDay1CashCushion).toLocaleString()}
-                    </span>
-                    <div className="text-[10px] text-emerald-200 mt-1 font-serif leading-snug">
-                      Held fluidly in remaining offsets to insulate family expenses compared to target buffer of <strong>${inputs.offsetBuffer.toLocaleString()}</strong>.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* DUAL-ENTRY COMPARATIVE LEDGER GRID */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* LEDGER STATE A: BEFORE DAY 1 */}
-              <div className="bg-stone-100 p-4 rounded-xl border border-stone-200 space-y-3">
-                <span className="text-[10.5px] uppercase font-extrabold tracking-wider text-stone-500 block font-sans border-b border-stone-200 pb-1">
-                  1. Before Day 1 (Portfolio Baseline State)
-                </span>
-                <div className="space-y-2 text-xs font-serif">
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-stone-200">
-                    <div>
-                      <span className="font-bold block text-stone-800">Paulan Court Property</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Standard 100% offset level</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>Loan: $381,446</div>
-                      <div className="text-emerald-700 text-[10px]">✓ Offset: $381,456 (Interest: $0)</div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-stone-200">
-                    <div>
-                      <span className="font-bold block text-stone-800">Fern St Property</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Partially uninsulated mortgage</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>Loan: $573,073</div>
-                      <div className="text-amber-700 text-[10px]">Offset: $238,374</div>
-                      <div className="text-rose-700 text-[9px] font-bold font-serif italic">⚠️ Uninsulated: $334,699 (charging 6.15%)</div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-stone-200 opacity-60">
-                    <div>
-                      <span className="font-bold block text-stone-800">Forever Home Residence</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Pending transaction</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>N/A</div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-stone-200/55 p-2.5 rounded font-sans font-bold text-stone-850 mt-1 border-stone-300">
-                    <span>Portfolio Net External Debt</span>
-                    <span className="font-mono text-stone-900">$334,689</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* LEDGER STATE B: AFTER DAY 1 SETTLEMENT */}
-              <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-150 space-y-3">
-                <span className="text-[10.5px] uppercase font-extrabold tracking-wider text-indigo-900 block font-sans border-b border-indigo-200 pb-1">
-                  2. After Day 1 Settlement (Peak Transaction Leverage)
-                </span>
-                <div className="space-y-2 text-xs font-serif">
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-indigo-100">
-                    <div>
-                      <span className="font-bold block text-indigo-950">Paulan Court Property</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Current mortgage state</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>Loan: $381,446</div>
-                      <div className="text-stone-500 text-[10px]">Offset Remaining: ${(381456 - finances.paulanOffsetPulled).toLocaleString()}</div>
-                      {finances.paulanOffsetPulled > 10 && (
-                        <div className="text-rose-700 text-[9px] font-bold font-serif italic leading-none mt-1">
-                          ⚠️ Uninsulated: ${(381446 - (381456 - finances.paulanOffsetPulled)).toLocaleString()} is charging 6.18%!
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-indigo-100">
-                    <div>
-                      <span className="font-bold block text-indigo-950">Fern St Property</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Current mortgage state</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>Loan: $573,073</div>
-                      <div className="text-stone-500 text-[10px]">Offset Remaining: ${(238374 - finances.fernOffsetPulled).toLocaleString()}</div>
-                      {(238374 - finances.fernOffsetPulled < 573073) && (
-                        <div className="text-rose-700 text-[9px] font-bold font-serif italic leading-none mt-1">
-                          ⚠️ Uninsulated: ${(573073 - (238374 - finances.fernOffsetPulled)).toLocaleString()} is charging 6.15%!
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-white p-2.5 rounded border border-indigo-100">
-                    <div>
-                      <span className="font-bold block text-indigo-950 font-sans tracking-tight">Forever Home Residence</span>
-                      <span className="text-[10px] text-stone-400 font-normal">Fully established Day 1 debt</span>
-                    </div>
-                    <div className="text-right font-mono text-stone-700">
-                      <div>Loan Principal: ${Math.round(finances.loanRequired).toLocaleString()}</div>
-                      <div className="text-rose-700 text-[9px] font-bold font-serif italic leading-none mt-1">
-                        ⚠️ Uninsulated: ${Math.round(finances.loanRequired).toLocaleString()} is charging {inputs.interestRate}%!
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center bg-indigo-200/50 p-2.5 rounded font-sans font-bold text-indigo-950 mt-1 border-indigo-200">
-                    <span>Peak Portfolio Net External Debt</span>
-                    <span className="font-mono text-indigo-900">
-                      ${Math.round(
-                        (381446 + 573073 + finances.loanRequired) - 
-                        ((381456 - finances.paulanOffsetPulled) + (238374 - finances.fernOffsetPulled))
-                      ).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* RE-REALIGNED 2-COLUMN MID-ROW GRID (MERYL'S CONTRIBUTION & PAULAN CONTRACT DETAILS) */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* COLUMN 1: MERY'S GRANNY FLAT INJECTION PANEL (DE-CLUTTERED) */}
-          <div className="bg-emerald-50/50 border border-emerald-150 p-6 rounded-xl space-y-4 shadow-sm print-card flex flex-col justify-between">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-emerald-950">
-                <span className="w-3 h-3 rounded-full bg-emerald-600 block"></span>
-                <h3 className="font-bold text-lg font-serif">
-                  Meryl: Sell Twin Ranges and GFI Payment
-                </h3>
-              </div>
-              <p className="text-xs text-emerald-850 font-serif leading-relaxed">
-                Meryl resides in her co-located granny flat. Under formal Granny Flat Interest rules, her cash proceeds are fully exempt from Centrelink's deprivation parameters, protecting her pension. Her proceeds are injected into offset post-settlement to secure her legal lifetime tenure.
-              </p>
-            </div>
-
-            <div className="bg-white p-4 rounded-lg border border-emerald-200 text-xs font-serif space-y-4">
-              {/* SLIDER 1: TWIN RANGES GROSS SALE PRICE */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-bold text-emerald-900">
-                  <span>Twin Ranges Gross Sale Price</span>
-                  <span className="font-mono text-emerald-700 text-sm">
-                    ${inputs.merylSalePrice.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={500000}
-                  max={1200000}
-                  step={5000}
-                  value={inputs.merylSalePrice}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "merylSalePrice",
-                      parseInt(e.target.value)
-                    )
-                  }
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                  <span>Min: $500k</span>
-                  <span>Max: $1.2M</span>
-                </div>
-              </div>
-
-              {/* SLIDER 2: MERYL'S CAPITAL CONTRIBUTION */}
-              <div className="space-y-1.5 pt-3 border-t border-emerald-100/60">
-                <div className="flex justify-between text-xs font-bold text-emerald-950">
-                  <span>Meryl's Capital Contribution</span>
-                  <span className="font-mono text-emerald-700 text-sm">
-                    ${inputs.merylContribution.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.round(finances.merylNetProceeds)}
-                  step={5000}
-                  value={inputs.merylContribution}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "merylContribution",
-                      parseInt(e.target.value)
-                    )
-                  }
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                  <span>Min: $0</span>
-                  <span>Max Net Capacity: ${Math.round(finances.merylNetProceeds).toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* SLIDER 3: TWIN RANGES RENO COST */}
-              <div className="space-y-1.5 pt-3 border-t border-emerald-100/60">
-                <div className="flex justify-between text-xs font-bold text-emerald-900">
-                  <span>Twin Ranges Reno Cost</span>
-                  <span className="font-mono text-emerald-700 text-sm">
-                    ${inputs.merylRenoCost.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={50000}
-                  step={1000}
-                  value={inputs.merylRenoCost}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "merylRenoCost",
-                      parseInt(e.target.value)
-                    )
-                  }
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                  <span>Min: $0</span>
-                  <span>Max: $50k</span>
-                </div>
-              </div>
-
-              {/* MERYL'S SELLING FEES DEDUCTION & SURPLUS AREA */}
-              <div className="space-y-1.5 pt-3 border-t border-emerald-100/60">
-                <div className="flex justify-between text-[11px] text-stone-500 font-serif">
-                  <span>Gross Sale Proceeds:</span>
-                  <span className="font-mono">${finances.merylGrossProceeds.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-[11px] text-stone-500 font-serif">
-                  <span>Agent Sell Fees & Legals (2.5%):</span>
-                  <span className="font-mono text-rose-700">-${finances.merylSellingFees.toLocaleString()}</span>
-                </div>
-                {inputs.merylRenoCost > 0 && (
-                  <div className="flex justify-between text-[11px] text-stone-500 font-serif">
-                    <span>Twin Ranges Reno Cost:</span>
-                    <span className="font-mono text-rose-700">-${inputs.merylRenoCost.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-[11px] text-emerald-950 font-bold font-serif border-t border-emerald-100/60 pt-1">
-                  <span>Net Sales Cash Released:</span>
-                  <span className="font-mono text-emerald-800">${finances.merylNetProceeds.toLocaleString()}</span>
-                </div>
-                <div className="bg-emerald-50/75 p-2.5 rounded border border-emerald-100 text-xs mt-2 flex justify-between items-center">
-                  <div>
-                    <span className="text-emerald-950 font-serif font-bold block">Meryl's Cash Surplus (residual)</span>
-                    <span className="text-[9.5px] text-stone-400 font-normal leading-normal">
-                      Retained for personal usage / external reserves
-                    </span>
-                  </div>
-                  <span className="font-mono text-emerald-900 font-bold text-sm ms-2">
-                    ${finances.merylCashSurplus.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* COLUMN 2: PAULAN COURT SALE COMPONENT WITH HOVER GANTT LINKAGE */}
-          <div 
-            id="paulan-sale-box"
-            onMouseEnter={() => setIsPaulanLinkedHovered(true)}
-            onMouseLeave={() => setIsPaulanLinkedHovered(false)}
-            className={`p-6 rounded-xl border transition-all duration-300 flex flex-col justify-between shadow-sm print-card ${
-              isPaulanLinkedHovered
-                ? "border-rose-500 bg-rose-50/75 shadow-[0_0_15px_rgba(244,63,94,0.15)] scale-[1.01]"
-                : "bg-rose-50/50 border-rose-150"
-            }`}
-          >
-            <div className="space-y-1.5">
-              <div className="flex justify-between items-center border-b border-rose-150 pb-1.5">
-                <span className="text-xs font-bold text-rose-900 font-serif block uppercase tracking-wider">
-                  Paulan Court Sale
-                </span>
-                <span className="bg-rose-100 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase font-sans">
-                  Adjustable Contract
-                </span>
-              </div>
-              <p className="text-xs text-rose-900 font-serif leading-relaxed">
-                Paulan Court is modelable via the sale price slider. Upon timeline settlement, the outstanding $381,446 mortgage is cleared and commissions are handled, releasing substantial liquid equity. Hovering over this details box highlights its exact timeline duration inside Swimlane C of the Gantt chart.
-              </p>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-rose-200 mt-3 space-y-3.5">
-              {/* PAULAN COURT SALE PRICE SLIDER */}
-              <div className="space-y-1.5 pb-2">
-                <div className="flex justify-between text-xs font-bold text-rose-950">
-                  <span>Paulan Court Sale Price</span>
-                  <span className="font-mono text-rose-700 text-sm font-bold">
-                    ${inputs.paulanSalePrice.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={500000}
-                  max={1200000}
-                  step={5000}
-                  value={inputs.paulanSalePrice}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "paulanSalePrice",
-                      parseInt(e.target.value)
-                    )
-                  }
-                  className="w-full accent-rose-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                  <span>Min: $500k</span>
-                  <span>Max: $1.2M</span>
-                </div>
-              </div>
-
-              {/* SLIDER 2: PAULAN RENOVATION COST */}
-              <div className="space-y-1.5 pt-3 border-t border-rose-100/60">
-                <div className="flex justify-between text-xs font-bold text-rose-950 font-serif">
-                  <span>Paulan Renovation Cost</span>
-                  <span className="font-mono text-rose-700 text-sm font-bold">
-                    ${inputs.paulanRenoCost.toLocaleString()}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={50000}
-                  step={1000}
-                  value={inputs.paulanRenoCost}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "paulanRenoCost",
-                      parseInt(e.target.value)
-                    )
-                  }
-                  className="w-full accent-rose-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                  <span>Min: $0</span>
-                  <span>Max: $50k</span>
-                </div>
-              </div>
-
-              {/* REAL ESTATE DEAL BREAKDOWN */}
-              <div className="text-xs space-y-1 font-serif text-rose-950 border-t border-rose-100/60 pt-2.5">
-                <div className="flex justify-between text-[11px] pb-1">
-                  <span>Contract price:</span>
-                  <span className="font-mono font-bold text-slate-800">${inputs.paulanSalePrice.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-[11px] pb-1 border-t border-rose-100/50 pt-1">
-                  <span>Outstanding Mortgage Paid Out:</span>
-                  <span className="font-mono text-rose-700">-$381,446</span>
-                </div>
-                <div className="flex justify-between text-[11px] pt-1">
-                  <span>Agent Commission & Conveyancing (2.5%):</span>
-                  <span className="font-mono text-rose-700">-${Math.round(finances.sellingCosts).toLocaleString()}</span>
-                </div>
-                {inputs.paulanRenoCost > 0 && (
-                  <div className="flex justify-between text-[11px] pt-1">
-                    <span>Paulan Renovation Cost:</span>
-                    <span className="font-mono text-rose-700">-${inputs.paulanRenoCost.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-rose-950 pt-1.5 font-sans border-t border-rose-250 mt-1.5">
-                  <span className="text-slate-900">Net Settle Cash Released:</span>
-                  <span className="font-mono text-emerald-700 text-sm font-extrabold">
-                    +${Math.round(finances.paulanNetProceeds).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* BLUE CONTAINER FOR FOREVER HOME RENO/MOVING COSTS */}
-            <div className="bg-blue-50/95 border border-blue-200/80 p-4 rounded-xl space-y-2 text-xs font-serif text-blue-950 mt-3.5 shadow-sm">
-              <div className="flex justify-between items-center font-bold">
-                <span className="text-blue-900 text-xs">Forever Home Renovation/Moving Costs</span>
-                <span className="font-mono text-blue-700 text-sm">
-                  ${inputs.fhRenoMovingCost.toLocaleString()}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100000}
-                step={1000}
-                value={inputs.fhRenoMovingCost}
-                onChange={(e) =>
-                  handleInputChange(
-                    "fhRenoMovingCost",
-                    parseInt(e.target.value)
-                  )
-                }
-                className="w-full accent-blue-600 cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-stone-400 font-normal mt-1 leading-none">
-                <span>Min: $0</span>
-                <span>Max: $100k</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* SECTION 4: THE NEW INTERNAL VARIATION MODELER */}
-        <section className="bg-blue-50/50 border border-blue-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-          <div className="border-b border-blue-200 pb-3">
-            <h3 className="text-xl font-bold text-blue-900 font-serif">
-              Mortgage Recasting
-            </h3>
-            <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
-              Australian lenders contractually recalculate (recast) your minimum
-              mandatory weekly payments when previous property sale proceeds are
-              directly paid down onto the loan principal. Move the slider below
-              to divide your post-sale cash pool of{" "}
-              <span className="font-bold text-blue-950">
-                ${Math.round(finances.totalCombinedPool).toLocaleString()}
-              </span>{" "}
-              between pure **Interest Offset (maximum liquidity)** and
-              **Principal reduction (lowest repayment cash-outflow)**.
-            </p>
-            <div className="mt-4 p-3.5 bg-blue-100/40 border border-blue-200/60 rounded-lg text-xs space-y-2 text-blue-950 font-serif leading-relaxed">
-              <strong className="text-blue-900 block font-serif">💡 Calculation Context & Offset Balance Composition:</strong>
-              <p>
-                This calculation takes place <strong>at the Recasting Event Moment</strong>, which occurs after both 
-                Meryl's property and Paulan Court have settled and all cash surplus is available.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-200/40 font-mono text-[11px]">
-                <div className="bg-white/60 p-2 rounded border border-blue-100">
-                  <span className="text-stone-500 block text-[9px] font-sans font-bold">1. DAY 1 CASH CUSHION</span>
-                  <span className="font-bold text-blue-900">${Math.round(finances.remainingDay1CashCushion).toLocaleString()}</span>
-                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Offset liquid reserve from Day 1</span>
-                </div>
-                <div className="bg-white/60 p-2 rounded border border-blue-100">
-                  <span className="text-stone-500 block text-[9px] font-sans font-bold">2. MERYL CONTRIBUTION</span>
-                  <span className="font-bold text-blue-900">${Math.round(inputs.merylContribution).toLocaleString()}</span>
-                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Granny Flat cash contribution</span>
-                </div>
-                <div className="bg-white/60 p-2 rounded border border-blue-100">
-                  <span className="text-stone-500 block text-[9px] font-sans font-bold">3. PAULAN COURT NET SALE</span>
-                  <span className="font-bold text-blue-900">${Math.round(finances.paulanNetProceeds).toLocaleString()}</span>
-                  <span className="block text-[8px] text-stone-400 font-sans mt-0.5">Proceeds after paying loan & fees</span>
-                </div>
-              </div>
-              <p className="text-[10px] text-stone-500 italic mt-1 font-sans">
-                Total combined pool at the time of calculation: <strong>${Math.round(finances.totalCombinedPool).toLocaleString()}</strong>. Depending on your choice below, a percentage of this pool is applied as a principal pay-down to recast payments, and the remainder is held in your offset account.
-              </p>
-            </div>
-          </div>
-
-          {/* MINI TRIGGER SELECTOR CONTAINER */}
-          <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-stone-100 pb-2">
-              <span className="text-[10px] font-bold text-blue-900 uppercase tracking-widest font-sans flex items-center gap-1.5">
-                <Icons.Settings className="w-3.5 h-3.5" />
-                Select Mortgage Recast Trigger Occasion
-              </span>
-              <span className="text-[10px] text-stone-400 font-serif italic">
-                Controls when lower weekly P&I payments take effect
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <button
-                onClick={() => handleInputChange("recastTriggerEvent", "day1")}
-                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
-                  inputs.recastTriggerEvent === "day1"
-                    ? "bg-blue-50/80 border-blue-400 font-medium shadow-sm text-blue-950"
-                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-blue-900">
-                  <input
-                    type="radio"
-                    checked={inputs.recastTriggerEvent === "day1"}
-                    onChange={() => {}}
-                    className="accent-blue-800 scale-90"
-                  />
-                  <span>Option A: Day 1 Immediate</span>
-                </div>
-                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
-                  Pay down loan right away using initial cash reserves.
-                </p>
-              </button>
-
-              <button
-                onClick={() => handleInputChange("recastTriggerEvent", "gfi")}
-                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
-                  inputs.recastTriggerEvent === "gfi"
-                    ? "bg-emerald-50/80 border-emerald-400 font-medium shadow-sm text-emerald-950"
-                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-emerald-900">
-                  <input
-                    type="radio"
-                    checked={inputs.recastTriggerEvent === "gfi"}
-                    onChange={() => {}}
-                    className="accent-emerald-800 scale-90"
-                  />
-                  <span>Option B: Twin Ranges Sale</span>
-                </div>
-                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
-                  Recast when Meryl's property sale proceeds are deposited.
-                </p>
-              </button>
-
-              <button
-                onClick={() => handleInputChange("recastTriggerEvent", "paulan")}
-                className={`flex flex-col text-left p-2.5 border rounded-lg transition text-xs cursor-pointer ${
-                  inputs.recastTriggerEvent === "paulan"
-                    ? "bg-rose-50/80 border-rose-400 font-medium shadow-sm text-rose-950"
-                    : "bg-stone-50/50 border-stone-200 hover:bg-stone-50 text-stone-700"
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold font-serif text-[11px] text-rose-900 font-semibold">
-                  <input
-                    type="radio"
-                    checked={inputs.recastTriggerEvent === "paulan"}
-                    onChange={() => {}}
-                    className="accent-rose-800 scale-90"
-                  />
-                  <span>Option C: Double Settle</span>
-                </div>
-                <p className="text-[9.5px] text-stone-500 mt-1 font-sans leading-normal">
-                  Delay recast until BOTH properties are fully settled.
-                </p>
-              </button>
-            </div>
-          </div>
-
-          {/* THE INTERNAL VARIATION SLIDER */}
-          <div className="bg-white p-6 rounded-xl border border-blue-150/80 space-y-4">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-semibold text-slate-700">
-              <div className="flex items-center gap-1.55">
-                <span className="p-1.5 bg-blue-100 rounded text-blue-800 font-bold">
-                  A
-                </span>
-                <div>
-                  <span className="block font-serif text-slate-900 font-bold">
-                    100% Offset (Liquidity Focus)
-                  </span>
-                  <span className="text-[10px] text-stone-400 font-normal">
-                    Cash stays withdrawable in offset
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex-1 px-4 w-full">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={2.5}
-                  value={inputs.internalVariationPct}
-                  onChange={(e) =>
-                    handleInputChange(
-                      "internalVariationPct",
-                      parseFloat(e.target.value)
-                    )
-                  }
-                  className="w-full accent-blue-900 h-2.5 bg-stone-200 rounded-lg cursor-pointer"
-                />
-                <div className="text-center mt-2">
-                  <span className="bg-blue-900 text-white font-mono text-[11px] font-bold px-3 py-1 rounded-full">
-                    {inputs.internalVariationPct}% Applied to Principal Reduction
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-right md:text-left">
-                <div className="text-right">
-                  <span className="block font-serif text-slate-900 font-bold">
-                    100% Principal Reduction
-                  </span>
-                  <span className="text-[10px] text-stone-400 font-normal">
-                    Slashes contractual weekly P&I
-                  </span>
-                </div>
-                <span className="p-1.5 bg-blue-100 rounded text-blue-800 font-bold">
-                  B
-                </span>
-              </div>
-            </div>
-
-            {/* VISUAL DIVISIONS CHART FOR APPLIED CASH */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-stone-100">
-              <div className="bg-blue-50/65 p-4 rounded-lg border border-blue-100 space-y-1 text-center">
-                <span className="text-[10px] uppercase font-bold text-stone-500 font-serif block">
-                  Applied to Principal Reduction (Recast)
-                </span>
-                <span className="text-2xl font-bold font-mono text-blue-900">
-                  $
-                  {Math.round(
-                    finances.appliedToPrincipalReduction
-                  ).toLocaleString()}
-                </span>
-                <span className="text-[10px] text-stone-400 block">
-                  Lowers outstanding Forever Home Loan limit to:{" "}
-                  <strong className="font-mono">
-                    $
-                    {Math.round(
-                      finances.recastForeverHomeLoanPrincipal
-                    ).toLocaleString()}
-                  </strong>
-                </span>
-              </div>
-
-              <div className="bg-emerald-50/65 p-4 rounded-lg border border-emerald-100 space-y-1 text-center">
-                <span className="text-[10px] uppercase font-bold text-stone-500 font-serif block">
-                  Kept inside Offset Account (Liquid)
-                </span>
-                <span className="text-2xl font-bold font-mono text-emerald-800">
-                  ${Math.round(finances.keptInOffsetAccount).toLocaleString()}
-                </span>
-                <span className="text-[10px] text-stone-400 block">
-                  Total Forever Home offset cash balance:{" "}
-                  <strong className="font-mono">
-                    ${Math.round(finances.recastOffsetBalance).toLocaleString()}
-                  </strong>
-                </span>
-              </div>
-            </div>
-
-            {/* CASH CUSHION BUFFER PRESERVATION MONITOR */}
-            <div className={`p-4 rounded-lg border leading-relaxed flex flex-col md:flex-row md:justify-between md:items-center gap-3 ${
-              finances.recastOffsetBalance < inputs.offsetBuffer
-                ? "bg-amber-50 border-amber-300 text-amber-950"
-                : "bg-stone-50 border-stone-200 text-stone-800"
-            }`}>
-              <div className="text-xs space-y-0.5 flex-1">
-                <span className="font-bold flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-sans">
-                  {finances.recastOffsetBalance < inputs.offsetBuffer ? "⚠️ Safety Cushion Target Compromised" : "🛡️ Safety Cushion Target Safeguarded"}
-                </span>
-                <p className="text-[10.5px] text-stone-500 font-serif leading-normal">
-                  Your day-1 emergency cash cushion buffer target is <strong className="font-mono text-blue-900">${inputs.offsetBuffer.toLocaleString()}</strong>.
-                  With the current slider choice, your post-recast liquid offset cash balance is <strong className="font-mono text-emerald-800">${Math.round(finances.recastOffsetBalance).toLocaleString()}</strong>.
-                </p>
-              </div>
-              {finances.recastOffsetBalance < inputs.offsetBuffer && (
-                <div className="bg-amber-100/50 p-2.5 rounded text-[10.5px] md:text-right font-serif leading-tight max-w-[280px] border border-amber-200">
-                  <span className="font-bold block text-amber-950 text-[11px]">Cushion Deficit: -${Math.round(inputs.offsetBuffer - finances.recastOffsetBalance).toLocaleString()}</span>
-                  Please reduce the principal reduction slider to restore emergency liquid cash above your target buffer limit.
-                </div>
-              )}
-            </div>
-
-            {/* THE REALTIME IMPACT ALERT */}
-            <div className="bg-amber-50 border border-amber-200/70 p-3.5 rounded-lg text-amber-950 text-xs font-serif leading-relaxed">
-              <p className="font-bold">💡 Dynamic Structural Impact Trade-Off:</p>
-              <p className="mt-0.5 opacity-95">
-                By choosing to direct{" "}
-                <span className="font-semibold">
-                  {inputs.internalVariationPct}%
-                </span>{" "}
-                to pay down principal: Your mandatory minimum Forever Home loan
-                payment drops contractually from{" "}
-                <span className="font-semibold font-mono">
-                  ${Math.round(finances.initialWeeklyPayment)}/wk
-                </span>{" "}
-                down to{" "}
-                <span className="font-semibold font-mono text-blue-900">
-                  ${Math.round(finances.recastWeeklyPayment)}/wk
-                </span>
-                , freeing up vital discretionary cash flow. However, you retain{" "}
-                <span className="font-semibold font-mono text-emerald-800">
-                  ${Math.round(finances.keptInOffsetAccount).toLocaleString()}
-                </span>{" "}
-                as withdrawable liquidity in your offset account to safeguard the
-                family estate against emergency overheads.
-              </p>
-            </div>
-          </div>
-        </section>
             </div>
 
             <div className={`space-y-6 ${activeTab === "settles" ? "block" : "hidden"} ${activeTab === "overview" ? "print:hidden" : "print:block"}`}>
@@ -7098,233 +3007,7 @@ export default function App() {
 
             </div> {/* Closing When the dust settles tab wrapper */}
 
-            <div className={`space-y-6 ${activeTab === "propertyResearch" ? "block" : "hidden print:hidden"}`}>
-              {/* SECTION: PROPERTY RESEARCH GENERATOR */}
-              <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
-                <div>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <h3 className="text-lg font-bold text-blue-900 font-serif">
-                      Property Research Report Generator
-                    </h3>
-                    <button
-                      onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
-                      className="text-[11px] font-semibold text-stone-600 hover:text-blue-900 flex items-center justify-center gap-1.5 border border-stone-200 hover:border-blue-200 px-3 py-1.5 rounded-lg bg-stone-50/50 cursor-pointer shadow-sm transition-all whitespace-nowrap self-start sm:self-center text-xs font-sans"
-                    >
-                      <span>🔑</span>
-                      <span>Config API Key {customGeminiApiKey.trim() ? "• Custom Active" : ""}</span>
-                    </button>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-1 font-serif leading-relaxed">
-                    Enter a property address or paste a link from <strong>realestate.com.au</strong> or <strong>domain.com.au</strong>. 
-                    Gemini will scan price guides, land sizes, custom descriptions, travel commutes, and assess suitability for multigenerational structures.
-                  </p>
-                </div>
 
-                {showApiKeyConfig && (
-                  <div className="bg-blue-50/40 border border-blue-100 p-4 rounded-xl space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-blue-950 font-serif">
-                        Configure Personal Gemini API Key
-                      </span>
-                      <span className="text-[10px] text-blue-800 bg-blue-100/60 px-2 py-0.5 rounded-full font-serif font-semibold">
-                        {customGeminiApiKey.trim() ? "Using Personal Key" : "Using Shared Key"}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-stone-600 font-serif leading-relaxed">
-                      If the default shared Gemini quota is busy or exhausted (resulting in fallback reports), you can supply your own free Gemini API key below. Keys are stored safely and solely in your browser's private local state.
-                    </p>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="password"
-                        placeholder="AIzaSy... (Paste your private API key here)"
-                        value={customGeminiApiKey}
-                        onChange={(e) => setCustomGeminiApiKey(e.target.value)}
-                        className="flex-1 border border-stone-300 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-900 bg-white shadow-inner"
-                      />
-                      {customGeminiApiKey.trim() && (
-                        <button
-                          onClick={() => setCustomGeminiApiKey("")}
-                          className="bg-stone-100 hover:bg-stone-200 border border-stone-305 text-stone-700 font-sans font-semibold text-xs px-3 py-1.5 rounded-lg cursor-pointer transition-all whitespace-nowrap"
-                        >
-                          Clear Custom Key
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-stone-400 font-serif">
-                      Don't have a custom key? Get a free API key instantly in 1 click at{" "}
-                      <a 
-                        href="https://aistudio.google.com/" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="text-blue-600 underline font-semibold hover:text-blue-800 text-[10px]"
-                      >
-                        aistudio.google.com
-                      </a>.
-                    </p>
-                  </div>
-                )}
-
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <input
-                    type="text"
-                    value={researchUrlOrAddress}
-                    onChange={(e) => setResearchUrlOrAddress(e.target.value)}
-                    placeholder="e.g., 24 Queen Street, Warragul VIC 3820 or realestate.com.au link"
-                    className="flex-1 border border-stone-300 rounded-lg px-4 py-2.5 text-xs font-sans focus:outline-none focus:ring-1 focus:ring-blue-900 bg-stone-50/50"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleGeneratePropertyReport();
-                    }}
-                  />
-                  <button
-                    onClick={handleGeneratePropertyReport}
-                    disabled={researchLoading}
-                    className="bg-blue-900 hover:bg-blue-950 disabled:bg-blue-900/50 text-white font-serif font-semibold text-xs px-5 py-2.5 rounded-lg transition-all shadow-sm cursor-pointer whitespace-nowrap flex items-center justify-center gap-2"
-                  >
-                    {researchLoading ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Researching Web...
-                      </>
-                    ) : (
-                      "Generate Report"
-                    )}
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 mt-2 select-none no-print">
-                  <input
-                    type="checkbox"
-                    id="toggle-live-grounding"
-                    checked={useSearch}
-                    onChange={(e) => setUseSearch(e.target.checked)}
-                    className="rounded border-stone-300 text-blue-900 focus:ring-blue-900 h-3.5 w-3.5 cursor-pointer accent-blue-900"
-                  />
-                  <label htmlFor="toggle-live-grounding" className="text-xs font-serif text-stone-600 font-medium cursor-pointer flex items-center gap-1.5">
-                    <span>🌐</span> Use Live Web Search Grounding <span className="text-[10px] text-stone-400 font-normal font-sans">(Uses Google Search to crawl active live listings; prone to rate-limits on standard keys)</span>
-                  </label>
-                </div>
-
-                {researchError && (
-                  <div className="bg-red-50 border border-red-200 text-red-800 p-4 rounded-lg text-xs space-y-1">
-                    <p className="font-bold font-serif text-[11px]">Report Generation Error</p>
-                    <p className="font-serif leading-relaxed text-[11px]">{researchError}</p>
-                  </div>
-                )}
-
-                {/* Simulated/Scraped dynamic content if loaded */}
-                {researchReport && (
-                  <div className="space-y-6 divide-y divide-stone-100">
-                    {researchReport.isFallback && (
-                      <div className="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-xl text-xs space-y-1.5 no-print">
-                        <p className="font-bold font-serif text-[11px] flex items-center gap-2 text-amber-950">
-                          <span className="text-sm">⚠️</span> Gemini API Rate Limit Fallback
-                        </p>
-                        <p className="font-serif leading-relaxed text-[11px] text-stone-600">
-                          The community Google Gemini API key has exceeded its request limit (429 Quota Exhausted). To ensure your workflow remains uninterrupted, our localized Gippsland property simulation model has formatted and processed your request to provide accurate real-estate values, commutes, and multigenerational build potential automatically.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Header Summary */}
-                    <div className="pt-2">
-                      <span className="text-[10px] font-bold tracking-wider text-rose-800 uppercase block font-serif mb-1">
-                        Target Acquisition Details
-                      </span>
-                      <h4 className="text-xl font-bold font-serif text-blue-950">
-                        {researchReport.address}
-                      </h4>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                        {/* Box 1: Price and Set button */}
-                        <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl space-y-3 flex flex-col justify-between">
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-stone-400 font-sans block mb-1">
-                              Estimated Purchase Price
-                            </span>
-                            <span className="text-2xl font-bold font-mono text-emerald-800">
-                              ${researchReport.estimatedPrice.toLocaleString()}
-                            </span>
-                          </div>
-
-                          <button
-                            onClick={handleApplyEstimatedPrice}
-                            className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-serif font-semibold text-xs px-4 py-2 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                          >
-                            <Icons.CheckCircle className="w-4 h-4 text-white" />
-                            Apply Forever Home Price
-                          </button>
-                        </div>
-
-                        {/* Box 2: Land size */}
-                        <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl space-y-3">
-                          <div>
-                            <span className="text-[10px] uppercase font-bold text-stone-400 font-sans block mb-1">
-                              Land Size / Area
-                            </span>
-                            <span className="text-2xl font-bold font-serif text-blue-950">
-                              {researchReport.landSize || "Not specified"}
-                            </span>
-                            <p className="text-[10px] text-stone-500 font-serif leading-relaxed mt-2">
-                              Critical for Granny Flat provisions, side pathways, or secondary dwelling setbacks under Baw Baw Shire regulations.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Description Analysis */}
-                    <div className="pt-6 space-y-2">
-                      <h5 className="font-semibold text-sm text-blue-900 font-serif">
-                        Property & Multigenerational Living Assessment
-                      </h5>
-                      <p className="text-xs text-stone-600 leading-relaxed font-serif whitespace-pre-line">
-                        {researchReport.description}
-                      </p>
-                    </div>
-
-                    {/* Key features */}
-                    <div className="pt-6">
-                      <h5 className="font-semibold text-sm text-blue-900 font-serif mb-2">
-                        Key Structural & Land Features
-                      </h5>
-                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-stone-600 font-serif">
-                        {researchReport.keyFeatures.map((feat, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-blue-900 font-bold mt-0.5">•</span>
-                            <span>{feat}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-
-
-                    {/* Grounding Source Attribution */}
-                    {researchSources.length > 0 && (
-                      <div className="pt-4 text-[10px] text-stone-400 font-serif">
-                        <span className="font-semibold block mb-1.5">Grounded Web & Listing Intelligence Sources:</span>
-                        <div className="flex flex-wrap gap-2">
-                          {researchSources.map((source, idx) => (
-                            <a
-                              key={idx}
-                              href={source.uri}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="bg-stone-50 hover:bg-stone-100 text-blue-800 border border-stone-200 px-2 py-0.5 rounded transition text-[10px] truncate max-w-xs"
-                            >
-                              🔗 {source.title || "Real Estate Listing"}
-                            </a>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-            </div>
 
             <div className={`space-y-6 ${activeTab === "futureExpenses" ? "block" : "hidden print:hidden"}`}>
               {/* Elegant Header section */}
@@ -9244,6 +4927,457 @@ export default function App() {
                   </div>
                 </div>
               </section>
+            </div>
+
+            {/* PAULAN COURT SELL vs RENT TAB CONTENT */}
+            <div className={`space-y-6 ${activeTab === "paulan" ? "block" : "hidden"}`}>
+              {/* Elegant Header Banner */}
+              <section className="bg-gradient-to-br from-emerald-950 via-slate-900 to-teal-950 text-white p-6 sm:p-8 rounded-xl shadow-md border-b border-white/[0.08] relative overflow-hidden">
+                <div className="relative z-10 space-y-2 font-serif">
+                  <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold uppercase tracking-widest font-mono">
+                    <Icons.Home className="w-4 h-4 text-emerald-400" />
+                    <span>Investment Strategy Modeler</span>
+                  </div>
+                  <h3 className="text-2xl sm:text-3xl font-bold font-serif tracking-tight text-white">
+                    Paulan Court: Sell vs. Rent Analysis
+                  </h3>
+                  <p className="text-stone-300 text-xs sm:text-sm font-serif max-w-3xl leading-relaxed">
+                    Compare the financial trajectory of selling Paulan Court at settlement to release liquid equity, versus keeping it as a long-term rental property with compounding capital growth and rental yields.
+                  </p>
+                </div>
+              </section>
+
+              {/* Strategy Selector Toggle */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Option A: Sell */}
+                <button
+                  onClick={() => handleInputChange("paulanStrategy", "sell")}
+                  className={`p-6 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                    inputs.paulanStrategy === "sell"
+                      ? "border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-600/30 shadow-md"
+                      : "border-stone-200 bg-white hover:border-stone-300 shadow-sm"
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono">Strategy Option A</span>
+                      <h4 className="text-lg font-serif font-bold text-slate-900">Sell Paulan Court (Default)</h4>
+                      <p className="text-xs text-stone-500 font-serif leading-relaxed mt-1">
+                        Sell the property for <span className="font-semibold text-stone-900">${inputs.paulanSalePrice.toLocaleString()}</span> at settlement. Outstanding mortgage of $381,446 is cleared, and the net proceeds are paid down/offset against the Forever Home to immediately reduce weekly outlays and interest.
+                      </p>
+                    </div>
+                    <div className={`p-2 rounded-lg ${inputs.paulanStrategy === "sell" ? "bg-emerald-600 text-white" : "bg-stone-100 text-stone-400"}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Option B: Rent */}
+                <button
+                  onClick={() => handleInputChange("paulanStrategy", "rent")}
+                  className={`p-6 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
+                    inputs.paulanStrategy === "rent"
+                      ? "border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-600/30 shadow-md"
+                      : "border-stone-200 bg-white hover:border-stone-300 shadow-sm"
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono">Strategy Option B</span>
+                      <h4 className="text-lg font-serif font-bold text-slate-900">Keep &amp; Rent Paulan Court</h4>
+                      <p className="text-xs text-stone-500 font-serif leading-relaxed mt-1">
+                        Retain the property and rent it out at <span className="font-semibold text-stone-900">${inputs.paulanWeeklyRent}/wk</span>. The $381,446 mortgage continues as a P&amp;I loan. Paulan's value grows over time as a capital asset, while rental yield offsets the mortgage repayments.
+                      </p>
+                    </div>
+                    <div className={`p-2 rounded-lg ${inputs.paulanStrategy === "rent" ? "bg-emerald-600 text-white" : "bg-stone-100 text-stone-400"}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Main Content Area */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Side: Parameters / Sliders */}
+                <div className="lg:col-span-5 space-y-6">
+                  {/* Property & Valuation Parameters */}
+                  <div className="bg-white border border-stone-200 p-5 rounded-xl shadow-sm space-y-5">
+                    <h4 className="font-bold text-sm text-stone-800 font-serif border-b border-stone-100 pb-2 flex items-center gap-2">
+                      <Icons.Settings className="w-4 h-4 text-emerald-800" />
+                      <span>Property &amp; Valuation Parameters</span>
+                    </h4>
+
+                    {/* Paulan Market Value */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-bold text-stone-700">
+                        <span>Estimated Property Value</span>
+                        <span className="font-mono text-emerald-800 text-sm font-bold">
+                          ${inputs.paulanSalePrice.toLocaleString()}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={500000}
+                        max={1200000}
+                        step={5000}
+                        value={inputs.paulanSalePrice}
+                        onChange={(e) => handleInputChange("paulanSalePrice", parseInt(e.target.value))}
+                        className="w-full accent-emerald-800 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                        <span>Min: $500k</span>
+                        <span>Max: $1.2M</span>
+                      </div>
+                    </div>
+
+                    {/* Paulan preparation slider */}
+                    <div className="space-y-1.5 pt-3 border-t border-stone-100">
+                      <div className="flex justify-between text-xs font-bold text-stone-700">
+                        <span>{inputs.paulanStrategy === "rent" ? "Preparation & Styling Cost" : "Renovation & Preparation Budget"}</span>
+                        <span className="font-mono text-emerald-800 text-sm font-bold">
+                          ${inputs.paulanRenoCost.toLocaleString()}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={30000}
+                        step={1000}
+                        value={inputs.paulanRenoCost}
+                        onChange={(e) => handleInputChange("paulanRenoCost", parseInt(e.target.value))}
+                        className="w-full accent-emerald-800 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                        <span>Min: $0</span>
+                        <span>Max: $30k</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 font-serif mt-1">
+                        {inputs.paulanStrategy === "rent" 
+                          ? "Required capital outlays to prep the house for premium renters (defaults to $5,000, paid out of starting cash offset reserves)."
+                          : "Upfront capital spent to maximize sales campaign result."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Rental Income & Holding Costs (displays when strategy is Rent) */}
+                  <div className={`bg-white border border-stone-200 p-5 rounded-xl shadow-sm space-y-5 transition-all duration-200 ${inputs.paulanStrategy === "rent" ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+                    <h4 className="font-bold text-sm text-stone-800 font-serif border-b border-stone-100 pb-2 flex items-center gap-2">
+                      <Icons.Dollar className="w-4 h-4 text-emerald-800" />
+                      <span>Rental Yield &amp; Outgoings</span>
+                    </h4>
+
+                    {/* Weekly Rent */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-bold text-stone-700">
+                        <span>Weekly Rental Income</span>
+                        <span className="font-mono text-emerald-800 text-sm font-bold">
+                          ${inputs.paulanWeeklyRent}/wk
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={400}
+                        max={1000}
+                        step={10}
+                        value={inputs.paulanWeeklyRent}
+                        onChange={(e) => handleInputChange("paulanWeeklyRent", parseInt(e.target.value))}
+                        className="w-full accent-emerald-800 cursor-pointer"
+                        disabled={inputs.paulanStrategy !== "rent"}
+                      />
+                      <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                        <span>Min: $400/w</span>
+                        <span>Max: $1,000/w</span>
+                      </div>
+                      <p className="text-[10px] text-stone-400 font-serif italic mt-0.5">
+                        Compounded annually at {inputs.annualInflationRate.toFixed(1)}% inflation to model rent rises.
+                      </p>
+                    </div>
+
+                    {/* Weekly Expenses */}
+                    <div className="space-y-1.5 pt-3 border-t border-stone-100">
+                      <div className="flex justify-between text-xs font-bold text-stone-700">
+                        <span>Weekly Holding Expenses</span>
+                        <span className="font-mono text-emerald-800 text-sm font-bold">
+                          ${inputs.paulanWeeklyExpenses}/wk
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={300}
+                        step={5}
+                        value={inputs.paulanWeeklyExpenses}
+                        onChange={(e) => handleInputChange("paulanWeeklyExpenses", parseInt(e.target.value))}
+                        className="w-full accent-emerald-800 cursor-pointer"
+                        disabled={inputs.paulanStrategy !== "rent"}
+                      />
+                      <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                        <span>Min: $0/w</span>
+                        <span>Max: $300/w</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 font-serif mt-1">
+                        Agent fees, landlord insurance, body corporate, maintenance, and rates.
+                      </p>
+                    </div>
+
+                    {/* Annual Inflation Rate */}
+                    <div className="space-y-1.5 pt-3 border-t border-stone-100">
+                      <div className="flex justify-between text-xs font-bold text-stone-700">
+                        <span>Inflation Adjustment Rate</span>
+                        <span className="font-mono text-emerald-800 text-sm font-bold">
+                          {inputs.annualInflationRate.toFixed(1)}% p.a.
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.0}
+                        max={6.0}
+                        step={0.1}
+                        value={inputs.annualInflationRate}
+                        onChange={(e) => handleInputChange("annualInflationRate", parseFloat(e.target.value))}
+                        className="w-full accent-emerald-800 cursor-pointer"
+                        disabled={inputs.paulanStrategy !== "rent"}
+                      />
+                      <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                        <span>Min: 0%</span>
+                        <span>Max: 6%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deferred Sale Strategy card (displays when strategy is Rent) */}
+                  <div className={`bg-white border border-stone-200 p-5 rounded-xl shadow-sm space-y-5 transition-all duration-200 ${inputs.paulanStrategy === "rent" ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+                    <h4 className="font-bold text-sm text-stone-800 font-serif border-b border-stone-100 pb-2 flex items-center gap-2">
+                      <Icons.Calendar className="w-4 h-4 text-emerald-800" />
+                      <span>Deferred Sale Strategy</span>
+                    </h4>
+
+                    {/* Toggle */}
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-stone-700 block">Sell Paulan Court Later</span>
+                        <p className="text-[10px] text-stone-400 font-serif">
+                          Toggle whether to simulate selling the property after a defined period of renting.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleInputChange("paulanSellLater", !inputs.paulanSellLater)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${inputs.paulanSellLater ? 'bg-emerald-800' : 'bg-stone-200'}`}
+                        disabled={inputs.paulanStrategy !== "rent"}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${inputs.paulanSellLater ? 'translate-x-6' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+
+                    {inputs.paulanSellLater && (
+                      <>
+                        {/* Years held before sale slider */}
+                        <div className="space-y-1.5 pt-3 border-t border-stone-100">
+                          <div className="flex justify-between text-xs font-bold text-stone-700">
+                            <span>Years Held Before Sale</span>
+                            <span className="font-mono text-emerald-800 text-sm font-bold">
+                              {inputs.paulanYearsBeforeSale ?? 10} Years
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={1}
+                            max={29}
+                            step={1}
+                            value={inputs.paulanYearsBeforeSale ?? 10}
+                            onChange={(e) => handleInputChange("paulanYearsBeforeSale", parseInt(e.target.value))}
+                            className="w-full accent-emerald-800 cursor-pointer"
+                            disabled={inputs.paulanStrategy !== "rent"}
+                          />
+                          <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                            <span>Min: 1 Yr</span>
+                            <span>Max: 29 Yrs</span>
+                          </div>
+                        </div>
+
+                        {/* Property growth rate slider */}
+                        <div className="space-y-1.5 pt-3 border-t border-stone-100">
+                          <div className="flex justify-between text-xs font-bold text-stone-700">
+                            <span>Paulan Annual Growth Rate</span>
+                            <span className="font-mono text-emerald-800 text-sm font-bold">
+                              {(inputs.paulanGrowthRate ?? 5.0).toFixed(1)}% p.a.
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={1.0}
+                            max={10.0}
+                            step={0.1}
+                            value={inputs.paulanGrowthRate ?? 5.0}
+                            onChange={(e) => handleInputChange("paulanGrowthRate", parseFloat(e.target.value))}
+                            className="w-full accent-emerald-800 cursor-pointer"
+                            disabled={inputs.paulanStrategy !== "rent"}
+                          />
+                          <div className="flex justify-between text-[10px] text-stone-400 mt-1">
+                            <span>Min: 1%</span>
+                            <span>Max: 10%</span>
+                          </div>
+                          <p className="text-[10px] text-stone-500 font-serif leading-relaxed mt-1">
+                            Compounding capital growth rate of the house value. Selling transaction fees (2.5%) are deducted and any surplus offsets and net proceeds are fully released into liquid reserves upon sale.
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Side: Projections & Analytical Comparison */}
+                <div className="lg:col-span-7 space-y-6">
+                  {/* Key Financial Impact Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Card 1: Neutralization Milestone */}
+                    <div className="bg-white border border-stone-200 p-4 rounded-xl shadow-sm space-y-1">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono">Portfolio Settle Year</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-slate-900 font-serif font-sans">Yr {finances.activeFullyOffsetYears}</span>
+                        <span className="text-xs text-stone-500 font-serif">to pay off completely</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 font-serif leading-relaxed pt-1">
+                        Global neutralization achieves complete debt elimination across all properties combined. 
+                        {inputs.paulanStrategy === "sell" 
+                          ? " Selling Paulan releases maximum initial cash, accelerating this outcome." 
+                          : " Renting Paulan delays debt-neutrality but adds a high-value growth asset."}
+                      </p>
+                    </div>
+
+                    {/* Card 2: Combined Loan Summary */}
+                    <div className="bg-white border border-stone-200 p-4 rounded-xl shadow-sm space-y-1">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider font-mono font-sans">Paulan Asset Equity</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-2xl font-bold text-emerald-800 font-serif font-sans">
+                          ${inputs.paulanStrategy === "rent" ? (inputs.paulanSalePrice - 381446).toLocaleString() : "$0"}
+                        </span>
+                        <span className="text-xs text-stone-500 font-serif">Initial Net Equity</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 font-serif leading-relaxed pt-1">
+                        {inputs.paulanStrategy === "rent"
+                          ? `Valued at $${inputs.paulanSalePrice.toLocaleString()} with a $381,446 P&I mortgage, initial LVR is ${(381446 / inputs.paulanSalePrice * 100).toFixed(0)}%.`
+                          : "Property sold, 100% of the equity is deployed immediately to pay off the primary home."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Cash Flow Breakdown Box */}
+                  <div className="bg-white border border-stone-200 p-6 rounded-xl shadow-sm space-y-4">
+                    <h4 className="font-bold text-base text-stone-900 font-serif border-b border-stone-100 pb-3 flex items-center gap-2">
+                      <Icons.Dollar className="w-5 h-5 text-emerald-800" />
+                      <span>{inputs.paulanStrategy === "rent" ? "Weekly Rental Cash Flow Dynamics" : "Financial Proceeds Summary"}</span>
+                    </h4>
+
+                    {inputs.paulanStrategy === "rent" ? (
+                      <div className="space-y-4">
+                        <p className="text-xs text-stone-500 font-serif leading-relaxed">
+                          A detailed projection of initial weekly revenues, holding outlays, and financing costs under the 6.05% P&amp;I interest rate:
+                        </p>
+
+                        <div className="space-y-2.5 font-serif text-xs">
+                          {/* Revenue */}
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Weekly Gross Rental Income:</span>
+                            <span className="font-mono text-emerald-700 font-bold">+${inputs.paulanWeeklyRent.toLocaleString()}/wk</span>
+                          </div>
+
+                          {/* Holding Outgoings */}
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Weekly Property Expenses (Agent, Rates, Corp, Insurance):</span>
+                            <span className="font-mono text-rose-700">-${inputs.paulanWeeklyExpenses.toLocaleString()}/wk</span>
+                          </div>
+
+                          {/* Mortgage Repayment */}
+                          {(() => {
+                            const rP = 0.0605 / 52;
+                            const nP = 30 * 52;
+                            const repayment = (381446 * rP * Math.pow(1 + rP, nP)) / (Math.pow(1 + rP, nP) - 1);
+                            const netCashflow = inputs.paulanWeeklyRent - inputs.paulanWeeklyExpenses - repayment;
+
+                            return (
+                              <>
+                                <div className="flex justify-between pb-2 border-b border-stone-100">
+                                  <span className="text-stone-600">Weekly Mortgage Repayment (P&amp;I @ 6.05% on $381,446):</span>
+                                  <span className="font-mono text-rose-700">-${Math.round(repayment).toLocaleString()}/wk</span>
+                                </div>
+
+                                <div className="bg-stone-50 p-3 rounded-lg border border-stone-150 flex justify-between items-center mt-4">
+                                  <div>
+                                    <span className="font-serif font-bold text-stone-900 block text-xs">Net Weekly Property Cash Flow</span>
+                                    <span className="text-[10px] text-stone-400 font-normal font-sans">Revenues minus expenses and loan servicing</span>
+                                  </div>
+                                  <span className={`font-mono font-bold text-sm ${netCashflow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                                    {netCashflow >= 0 ? "+" : ""}${netCashflow.toFixed(2)}/wk
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-xs font-serif leading-relaxed text-emerald-950 space-y-1.5">
+                          <strong className="text-emerald-900 font-bold font-serif">💡 Long-Term Wealth Accumulation Note:</strong>
+                          <p>
+                            Renting creates dual benefits: <strong>Compounding Capital Growth</strong> (at 5% p.a., Paulan reaches ${(inputs.paulanSalePrice * Math.pow(1.05, 15) / 1000).toFixed(0)}k in 15 years) and <strong>Inflation-Indexed Rents</strong>. At Year 15, the rental income grows to approximately ${(inputs.paulanWeeklyRent * Math.pow(1 + inputs.annualInflationRate/100, 15)).toFixed(0)}/week, transforming Paulan into a powerful cash-flow engine.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <p className="text-xs text-stone-500 font-serif leading-relaxed">
+                          Immediate sale of Paulan Court releases maximum liquid funds to pay down the primary residential debt:
+                        </p>
+
+                        <div className="space-y-2.5 font-serif text-xs">
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Contract Sale Price:</span>
+                            <span className="font-mono text-emerald-800 font-bold">${inputs.paulanSalePrice.toLocaleString()}</span>
+                          </div>
+
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Real Estate Agent Sell Commission &amp; Legals (2.5%):</span>
+                            <span className="font-mono text-rose-700">-${Math.round(inputs.paulanSalePrice * 0.025).toLocaleString()}</span>
+                          </div>
+
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Preparation &amp; Reno Expenditures:</span>
+                            <span className="font-mono text-rose-700">-${inputs.paulanRenoCost.toLocaleString()}</span>
+                          </div>
+
+                          <div className="flex justify-between pb-1.5 border-b border-stone-100">
+                            <span className="text-stone-600">Discharge Outstanding Mortgage:</span>
+                            <span className="font-mono text-rose-700">-$381,446</span>
+                          </div>
+
+                          <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 flex justify-between items-center mt-4">
+                            <div>
+                              <span className="font-serif font-bold text-emerald-950 block text-xs">Net Cash Released at Settlement</span>
+                              <span className="text-[10px] text-stone-400 font-normal font-sans">Paid directly into the Forever Home principal/offset</span>
+                            </div>
+                            <span className="font-mono font-bold text-emerald-900 text-sm font-sans">
+                              +${Math.round(inputs.paulanSalePrice * 0.975 - inputs.paulanRenoCost - 381446).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="bg-emerald-50/50 p-4 rounded-xl border border-emerald-100/60 text-xs font-serif leading-relaxed text-emerald-950 space-y-1.5">
+                          <strong className="text-emerald-900 font-bold font-serif">💡 Interest Reduction Impact:</strong>
+                          <p>
+                            By injecting the net cash of over $600k into your primary mortgage immediately at settlement, you save approximately <strong>$36,000+ per year in interest outlays</strong>. This reduces your mandatory weekly payments and maximizes cash accumulation velocity.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div> {/* Closing Right Column */}
         </div> {/* Closing WORKSPACE MAIN GRID */}
