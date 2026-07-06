@@ -320,6 +320,35 @@ export function ScenarioControls({
               </div>
             </div>
 
+            <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">
+              <div className="flex justify-between text-xs font-semibold">
+                <span className="text-stone-700 font-serif">
+                  ANZ Savings Rate of Return
+                </span>
+                <span className="text-blue-900 font-bold font-mono">
+                  {(inputs.anzSavingsRate ?? 4.75).toFixed(2)}% p.a.
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.0}
+                max={8.0}
+                step={0.1}
+                value={inputs.anzSavingsRate ?? 4.75}
+                onChange={(e) =>
+                  handleInputChange(
+                    "anzSavingsRate",
+                    parseFloat(e.target.value)
+                  )
+                }
+                className="w-full accent-blue-900 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-stone-400">
+                <span>0.0% min</span>
+                <span>8.0% p.a. cap</span>
+              </div>
+            </div>
+
             {/* USER-SELECTABLE PRIORITY DEPLETER TOGGLE */}
             <div className="p-3 bg-stone-50/70 rounded-xl border border-stone-200 text-xs font-serif space-y-2">
               <span className="text-stone-700 font-semibold block text-[11px]">
@@ -419,10 +448,10 @@ export function ScenarioControls({
                   <div className="w-full bg-stone-950 h-1 rounded-full overflow-hidden">
                     <div
                       className="bg-emerald-500 h-full transition-all"
-                      style={{ width: `${(finances.paulanOffsetPulled / 381456) * 100}%` }}
+                      style={{ width: `${(finances.paulanOffsetPulled / ACCOUNT_BALANCES.paulansOffset) * 100}%` }}
                     ></div>
                   </div>
-                  <div className="text-[9px] text-stone-500 text-right">Drawing {Math.round((finances.paulanOffsetPulled / 381456) * 100)}% of $381k</div>
+                  <div className="text-[9px] text-stone-500 text-right">Drawing {Math.round((finances.paulanOffsetPulled / ACCOUNT_BALANCES.paulansOffset) * 100)}% of ${(ACCOUNT_BALANCES.paulansOffset / 1000).toFixed(0)}k</div>
                 </div>
 
                 {/* Fern Offset */}
@@ -432,7 +461,7 @@ export function ScenarioControls({
                     <span className="font-mono font-semibold text-emerald-400">${Math.round(finances.fernOffsetPulled).toLocaleString()}</span>
                   </div>
                   {(() => {
-                    const maxFernOffset = 238374 + (finances.gfiBeforeFHSettle ? inputs.merylContribution : 0);
+                    const maxFernOffset = ACCOUNT_BALANCES.fernOffset + (finances.gfiBeforeFHSettle ? inputs.merylContribution : 0);
                     const pct = maxFernOffset > 0 ? Math.round((finances.fernOffsetPulled / maxFernOffset) * 100) : 0;
                     return (
                       <>
@@ -589,11 +618,11 @@ export function ScenarioControls({
                     <span className="text-[10px] text-stone-400 font-normal">Current mortgage state</span>
                   </div>
                   <div className="text-right font-mono text-stone-700">
-                    <div>Loan: $381,446</div>
-                    <div className="text-stone-500 text-[10px]">Offset Remaining: ${(381456 - finances.paulanOffsetPulled).toLocaleString()}</div>
+                    <div>Loan: ${ACCOUNT_BALANCES.paulansLoan.toLocaleString()}</div>
+                    <div className="text-stone-500 text-[10px]">Offset Remaining: ${(ACCOUNT_BALANCES.paulansOffset - finances.paulanOffsetPulled).toLocaleString()}</div>
                     {finances.paulanOffsetPulled > 10 && (
                       <div className="text-rose-700 text-[9px] font-bold font-serif italic leading-none mt-1">
-                        ⚠️ Uninsulated: ${(381446 - (381456 - finances.paulanOffsetPulled)).toLocaleString()} is charging 6.18%!
+                        ⚠️ Uninsulated: ${(ACCOUNT_BALANCES.paulansLoan - (ACCOUNT_BALANCES.paulansOffset - finances.paulanOffsetPulled)).toLocaleString()} is charging 6.18%!
                       </div>
                     )}
                   </div>
@@ -605,11 +634,11 @@ export function ScenarioControls({
                     <span className="text-[10px] text-stone-400 font-normal">Current mortgage state</span>
                   </div>
                   <div className="text-right font-mono text-stone-700">
-                    <div>Loan: $573,073</div>
-                    <div className="text-stone-500 text-[10px]">Offset Remaining: ${(238374 - finances.fernOffsetPulled).toLocaleString()}</div>
-                    {(238374 - finances.fernOffsetPulled < 573073) && (
+                    <div>Loan: ${ACCOUNT_BALANCES.fernLoan.toLocaleString()}</div>
+                    <div className="text-stone-500 text-[10px]">Offset Remaining: ${(ACCOUNT_BALANCES.fernOffset - finances.fernOffsetPulled).toLocaleString()}</div>
+                    {(ACCOUNT_BALANCES.fernOffset - finances.fernOffsetPulled < ACCOUNT_BALANCES.fernLoan) && (
                       <div className="text-rose-700 text-[9px] font-bold font-serif italic leading-none mt-1">
-                        ⚠️ Uninsulated: ${(573073 - (238374 - finances.fernOffsetPulled)).toLocaleString()} is charging 6.15%!
+                        ⚠️ Uninsulated: ${(ACCOUNT_BALANCES.fernLoan - (ACCOUNT_BALANCES.fernOffset - finances.fernOffsetPulled)).toLocaleString()} is charging 6.13%!
                       </div>
                     )}
                   </div>
@@ -632,8 +661,8 @@ export function ScenarioControls({
                   <span>Peak Portfolio Net External Debt</span>
                   <span className="font-mono text-indigo-900">
                     ${Math.round(
-                      (381446 + 573073 + finances.loanRequired) -
-                      ((381456 - finances.paulanOffsetPulled) + (238374 - finances.fernOffsetPulled))
+                      (ACCOUNT_BALANCES.paulansLoan + ACCOUNT_BALANCES.fernLoan + finances.loanRequired) -
+                      ((ACCOUNT_BALANCES.paulansOffset - finances.paulanOffsetPulled) + (ACCOUNT_BALANCES.fernOffset - finances.fernOffsetPulled))
                     ).toLocaleString()}
                   </span>
                 </div>

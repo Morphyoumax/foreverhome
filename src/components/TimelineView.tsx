@@ -36,12 +36,12 @@ const DragHandleIcon = () => (
   </div>
 );
 
-// Stated Financial Position as of May 27, 2026
+// Stated Financial Position as of July 6, 2026
 const ACCOUNT_BALANCES = {
-  paulansLoan: 381446,
-  paulansOffset: 381456,
-  fernLoan: 504000,
-  fernOffset: 238374,
+  paulansLoan: 377965.85,
+  paulansOffset: 377965.85,
+  fernLoan: 570016.29,
+  fernOffset: 199185.11,
 };
 
 export function TimelineView({
@@ -63,11 +63,11 @@ export function TimelineView({
             name: sc.name,
             inputs: adjustInputs({
               merylStartDelay: sc.inputs.merylStartDelay ?? 0,
-              merylPrepDays: sc.inputs.merylPrepDays ?? 60,
+              merylPrepDays: sc.inputs.merylPrepDays ?? 40,
               merylCampaignDays: sc.inputs.merylCampaignDays ?? 30,
               merylSettleDays: sc.inputs.merylSettleDays ?? 60,
-              fhStartDelay: sc.inputs.fhStartDelay ?? 19,
-              fhSettleDays: sc.inputs.fhSettleDays ?? 107,
+              fhStartDelay: sc.inputs.fhStartDelay ?? 0,
+              fhSettleDays: sc.inputs.fhSettleDays ?? 74,
               renoDays: sc.inputs.renoDays ?? 3,
               moveDays: sc.inputs.moveDays ?? 10,
               paulanStartDelay: sc.inputs.paulanStartDelay ?? 139,
@@ -92,8 +92,8 @@ export function TimelineView({
               fhRenoMovingCost: sc.inputs.fhRenoMovingCost ?? 10000,
               recastTriggerEvent: sc.inputs.recastTriggerEvent ?? "gfi",
               merylRentCostPerWeek: sc.inputs.merylRentCostPerWeek ?? 650,
-              paulanOffsetPulled: sc.inputs.paulanOffsetPulled ?? 381456,
-              fernOffsetPulled: sc.inputs.fernOffsetPulled ?? 238374,
+              paulanOffsetPulled: sc.inputs.paulanOffsetPulled ?? 377965.85,
+              fernOffsetPulled: sc.inputs.fernOffsetPulled ?? 199185.11,
               paulanStrategy: sc.inputs.paulanStrategy ?? "sell",
               paulanWeeklyRent: sc.inputs.paulanWeeklyRent ?? 600,
               paulanWeeklyExpenses: sc.inputs.paulanWeeklyExpenses ?? 150,
@@ -110,11 +110,11 @@ export function TimelineView({
         name: "Sell Twin Ranges before Forever Settles",
         inputs: adjustInputs({
           merylStartDelay: 0,
-          merylPrepDays: 60,
+          merylPrepDays: 40,
           merylCampaignDays: 30,
           merylSettleDays: 60,
-          fhStartDelay: 19,
-          fhSettleDays: 107,
+          fhStartDelay: 0,
+          fhSettleDays: 74,
           renoDays: 3,
           moveDays: 10,
           paulanStartDelay: 139,
@@ -139,8 +139,8 @@ export function TimelineView({
           fhRenoMovingCost: 10000,
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
-          paulanOffsetPulled: 381456,
-          fernOffsetPulled: 238374,
+          paulanOffsetPulled: 377965.85,
+          fernOffsetPulled: 199185.11,
           paulanStrategy: "sell",
           paulanWeeklyRent: 600,
           paulanWeeklyExpenses: 150,
@@ -151,11 +151,11 @@ export function TimelineView({
         name: "Moving House in Jan",
         inputs: adjustInputs({
           merylStartDelay: 0,
-          merylPrepDays: 60,
+          merylPrepDays: 40,
           merylCampaignDays: 30,
           merylSettleDays: 60,
-          fhStartDelay: 19,
-          fhSettleDays: 107,
+          fhStartDelay: 0,
+          fhSettleDays: 74,
           renoDays: 3,
           moveDays: 10,
           paulanStartDelay: 139,
@@ -180,8 +180,8 @@ export function TimelineView({
           fhRenoMovingCost: 10000,
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
-          paulanOffsetPulled: 381456,
-          fernOffsetPulled: 238374,
+          paulanOffsetPulled: 377965.85,
+          fernOffsetPulled: 199185.11,
           paulanStrategy: "sell",
           paulanWeeklyRent: 600,
           paulanWeeklyExpenses: 150,
@@ -391,7 +391,7 @@ export function TimelineView({
   };
 
   const getGanttDateStr = (days: number) => {
-    const d = new Date(2026, 4, 15); // May 15, 2026
+    const d = new Date(2026, 6, 6); // July 6, 2026
     d.setDate(d.getDate() + days);
     return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
   };

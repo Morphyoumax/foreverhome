@@ -6,7 +6,7 @@ const WeeklyNetSalary = 5303.35; // Locked family salary split
 
 // Helper function to calculate a calendar date from a day offset
 const getGanttDateStr = (days: number) => {
-  const d = new Date(2026, 4, 15); // May 15, 2026
+  const d = new Date(2026, 6, 6); // July 6, 2026
   d.setDate(d.getDate() + days);
   return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 };
@@ -70,14 +70,14 @@ export function useSimulationEngine({
     let paulanOffsetPulled = 0;
     let fernOffsetPulled = 0;
 
-    const maxFernOffsetAvailable = 238374 + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
+    const maxFernOffsetAvailable = ACCOUNT_BALANCES.fernOffset + (gfiBeforeFHSettle ? inputs.merylContribution : 0);
 
     if (inputs.depletionPriorityToggle === "paulan") {
-      paulanOffsetPulled = Math.min(381456, actualPull);
+      paulanOffsetPulled = Math.min(ACCOUNT_BALANCES.paulansOffset, actualPull);
       fernOffsetPulled = Math.min(maxFernOffsetAvailable, Math.max(0, actualPull - paulanOffsetPulled));
     } else {
       fernOffsetPulled = Math.min(maxFernOffsetAvailable, actualPull);
-      paulanOffsetPulled = Math.min(381456, Math.max(0, actualPull - fernOffsetPulled));
+      paulanOffsetPulled = Math.min(ACCOUNT_BALANCES.paulansOffset, Math.max(0, actualPull - fernOffsetPulled));
     }
 
     const totalOffsetsPulled = paulanOffsetPulled + fernOffsetPulled;
@@ -182,17 +182,27 @@ export function useSimulationEngine({
           (Math.pow(1 + rWeekly, nWeeks) - 1)
         : 0;
 
-    // Calculate Fern St variable repayment (base rate 5.95%)
-    const fernWeeklyPayment = 783.74;
+    // Calculate Fern St variable repayment (base rate 6.13%)
+    const rWeeklyFernSim = 0.0613 / 52;
+    const nWeeksFern = 30 * 52;
+    const fernWeeklyPayment = (ACCOUNT_BALANCES.fernLoan * rWeeklyFernSim * Math.pow(1 + rWeeklyFernSim, nWeeksFern)) / (Math.pow(1 + rWeeklyFernSim, nWeeksFern) - 1);
 
     // Standard Cash Flow Ratios
     const totalCommittedWeeklyOutlays = recastWeeklyPayment + fernWeeklyPayment;
+    const effectiveWeeklySavings = inputs.useFixedDiscretionary
+      ? Math.max(0, WeeklyNetSalary - totalCommittedWeeklyOutlays - (inputs.fixedDiscretionaryCash ?? 3000))
+      : inputs.weeklySavings;
+
+    const rWeeklySavings = (inputs.anzSavingsRate ?? 3.75) / 100 / 52;
+
     const mortgageToIncomeRatio =
       (totalCommittedWeeklyOutlays / WeeklyNetSalary) * 100;
     const mortgageWithSavingsStrainRatio =
-      ((totalCommittedWeeklyOutlays + inputs.weeklySavings) / WeeklyNetSalary) * 100;
+      ((totalCommittedWeeklyOutlays + effectiveWeeklySavings) / WeeklyNetSalary) * 100;
     const leftoverDiscretionaryCash =
-      WeeklyNetSalary - totalCommittedWeeklyOutlays - inputs.weeklySavings;
+      inputs.useFixedDiscretionary
+        ? (inputs.fixedDiscretionaryCash ?? 3000)
+        : (WeeklyNetSalary - totalCommittedWeeklyOutlays - inputs.weeklySavings);
 
     // PART A: Run Baseline Portfolio Simulation (ignoring future expenses and other incomes)
     const w_build = Math.round(newBuildTiming * 52);
@@ -232,10 +242,13 @@ export function useSimulationEngine({
     };
 
     const rWeeklyFHSim = rWeekly;
-    const rWeeklyFernSim = 0.0595 / 52;
     const w_paulan_sale = Math.round((inputs.paulanYearsBeforeSale ?? 10) * 52);
 
     for (let w = 0; w <= 30 * 52; w++) {
+      if (bSimExtraCashSavings > 0) {
+        bSimExtraCashSavings += bSimExtraCashSavings * rWeeklySavings;
+      }
+
       let bPaulanSaleCashRelease = 0;
       if (inputs.paulanStrategy === "rent" && inputs.paulanSellLater && w === w_paulan_sale) {
         const tVal = w / 52;
@@ -337,7 +350,7 @@ export function useSimulationEngine({
         ? inputs.paulanWeeklyExpenses * Math.pow(1 + (inputs.annualInflationRate ?? 3) / 100, Math.floor(w / 52))
         : 0;
 
-      let remainingSavings = inputs.weeklySavings + fhFreedUp + fernFreedUp;
+      let remainingSavings = effectiveWeeklySavings + fhFreedUp + fernFreedUp;
       if (inputs.paulanStrategy === "rent" && !hasPaulanBeenSold) {
         remainingSavings += (currentRent - currentExpenses) - actualPaulanPaymentPaid;
       }
@@ -522,6 +535,7 @@ export function useSimulationEngine({
     let liquidOffsetAtBuildVal = 0;
     let actualDrawFromOffsetsVal = 0;
     let newBuildLoanAmountVal = 0;
+    let postBuildGrossCashSurplusVal = 0;
 
     let activeHalfOffsetWeek = -1;
     let activeFullyOffsetWeek = -1;
@@ -558,6 +572,10 @@ export function useSimulationEngine({
     }>();
 
     for (let w = 0; w <= 30 * 52; w++) {
+      if (simExtraCashSavings > 0) {
+        simExtraCashSavings += simExtraCashSavings * rWeeklySavings;
+      }
+
       let paulanSaleCashRelease = 0;
       if (inputs.paulanStrategy === "rent" && inputs.paulanSellLater && w === w_paulan_sale) {
         const tVal = w / 52;
@@ -653,6 +671,40 @@ export function useSimulationEngine({
             simExtraCashSavings -= depositToNB;
           }
         }
+
+        // Calculate postBuildGrossCashSurplusVal at exact build week
+        const activeExtraIncomesAtBuild = futureIncomes.filter(inc => {
+          const startWeek = Math.round(inc.timingStartYears * 52);
+          const endWeek = inc.timingEndYears !== null ? Math.round(inc.timingEndYears * 52) : (30 * 52);
+          return w_build >= startWeek && w_build <= endWeek;
+        });
+        const totalActiveExtraWeeklyIncomeAtBuild = activeExtraIncomesAtBuild.reduce((sum, inc) => {
+          return sum + (inc.annualAmount * 0.85) / 52;
+        }, 0);
+        const totalWeeklyNetIncomeAtBuild = 5303.35 + totalActiveExtraWeeklyIncomeAtBuild;
+
+        const isFHPaidOffByBuild = fhPaidOffWeek !== -1 && w_build >= fhPaidOffWeek;
+        const isFernPaidOffByBuild = fernPaidOffWeek !== -1 && w_build >= fernPaidOffWeek;
+        const isNBPaidOffByBuild = nbPaidOffWeek !== -1 && w_build >= nbPaidOffWeek;
+
+        const fhRepaymentAtBuild = isFHPaidOffByBuild ? 0 : recastWeeklyPayment;
+        const fernRepaymentAtBuild = isFernPaidOffByBuild ? 0 : fernWeeklyPayment;
+        const nbRepaymentAtBuild = isNBPaidOffByBuild ? 0 : newBuildWeeklyPayment;
+
+        const activeExpenseLoansAtBuild = futureExpenses
+          .filter(exp => exp.source === "new_loan" && Math.round(exp.timingYears * 52) <= w_build)
+          .map(exp => {
+            const rLoanWeekly = (inputs.interestRate / 100) / 52;
+            const nLoanWeeks = 30 * 52;
+            const pmt = rLoanWeekly > 0 
+              ? (exp.amount * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+              : 0;
+            return pmt;
+          });
+        const totalExpenseLoansPaymentAtBuild = activeExpenseLoansAtBuild.reduce((sum, pmt) => sum + pmt, 0);
+
+        const totalRepaymentsAtBuild = fhRepaymentAtBuild + fernRepaymentAtBuild + nbRepaymentAtBuild + totalExpenseLoansPaymentAtBuild;
+        postBuildGrossCashSurplusVal = totalWeeklyNetIncomeAtBuild - totalRepaymentsAtBuild;
       }
 
       // 2. Process extra incomes in this week with 15% tax haircut applied
@@ -799,9 +851,11 @@ export function useSimulationEngine({
       const fernFreedUp = fernWeeklyPayment - actualFernPaymentPaid;
 
       // Track savings surplus or repayment deficit (repayments redirected to cash/offsets on payoff)
-      const currentActiveSavingsRate = (newBuildPostWeeklySavingsOverride !== null && w >= w_build)
-        ? newBuildPostWeeklySavingsOverride
-        : inputs.weeklySavings;
+      const currentActiveSavingsRate = (w >= w_build)
+        ? (inputs.usePostBuildFixedDiscretionary
+            ? Math.max(0, postBuildGrossCashSurplusVal - (inputs.postBuildFixedDiscretionaryCash ?? 3000))
+            : (newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : effectiveWeeklySavings))
+        : effectiveWeeklySavings;
 
       const hasPaulanBeenSold = inputs.paulanStrategy === "rent" && inputs.paulanSellLater && w >= w_paulan_sale;
       const currentRent = (inputs.paulanStrategy === "rent" && !hasPaulanBeenSold)
@@ -1197,7 +1251,7 @@ export function useSimulationEngine({
 
       // Extra savings accumulation since FH Opened
       const weeksFHOpened = fhOpened ? Math.floor((dayOffset - timeline.fhSettleEnd) / 7) : 0;
-      const savingsAccumulated = weeksFHOpened * inputs.weeklySavings;
+      const savingsAccumulated = weeksFHOpened * effectiveWeeklySavings;
 
       // Offset tracking:
       // FH offset starting point
@@ -1317,7 +1371,7 @@ export function useSimulationEngine({
           : 0;
 
       const cells = savingsMultipliers.map((mSavings) => {
-        const testWeeklySavings = inputs.weeklySavings * mSavings;
+        const testWeeklySavings = effectiveWeeklySavings * mSavings;
 
         let simFH = recastForeverHomeLoanPrincipal;
         let simOffFH = recastOffsetBalance;
@@ -1328,7 +1382,7 @@ export function useSimulationEngine({
         let testBothNeutralizedWeek = -1;
 
         const rWeeklyFHTest = rWeeklyTest;
-        const rWeeklyFernTest = 0.0595 / 52;
+        const rWeeklyFernTest = 0.0613 / 52;
 
         for (let w = 0; w <= 30 * 52; w++) {
           if (simOffFH >= simFH && testFHNeutralizedWeek === -1) {
@@ -1424,6 +1478,7 @@ export function useSimulationEngine({
       mortgageToIncomeRatio,
       mortgageWithSavingsStrainRatio,
       leftoverDiscretionaryCash,
+      effectiveWeeklySavings,
       aggregateTransitionInterest,
       totalCommittedWeeklyOutlays,
       targetDeposit20PctOfLoan,
@@ -1502,6 +1557,10 @@ export function useSimulationEngine({
       baselineFernTotalInterestPaid: bFernTotalInterestPaid,
       baselinePaulanTotalInterestPaid: bPaulanTotalInterestPaid,
       baselineTotalInterestPaid: bFhTotalInterestPaid + bFernTotalInterestPaid + (inputs.paulanStrategy === "rent" ? bPaulanTotalInterestPaid : 0),
+      postBuildGrossCashSurplus: postBuildGrossCashSurplusVal,
+      postBuildWeeklySavings: (inputs.usePostBuildFixedDiscretionary
+        ? Math.max(0, postBuildGrossCashSurplusVal - (inputs.postBuildFixedDiscretionaryCash ?? 3000))
+        : (newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : inputs.weeklySavings)),
     };
   }, [
     inputs,

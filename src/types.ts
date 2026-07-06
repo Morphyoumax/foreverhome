@@ -42,6 +42,11 @@ export interface PropertyInputs {
   paulanSellLater?: boolean;
   paulanYearsBeforeSale?: number;
   paulanGrowthRate?: number;
+  useFixedDiscretionary?: boolean;
+  fixedDiscretionaryCash?: number;
+  anzSavingsRate?: number;
+  usePostBuildFixedDiscretionary?: boolean;
+  postBuildFixedDiscretionaryCash?: number;
 }
 
 export interface PropertyScenario {

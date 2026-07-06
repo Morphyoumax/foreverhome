@@ -249,7 +249,7 @@ const Icons = {
   ),
 };
 
-// Stated Financial Position as of May 27, 2026
+// Stated Financial Position as of July 6, 2026
 
 export default function App() {
   const [inputs, setInputs] = useState<PropertyInputs>(() =>
@@ -468,14 +468,14 @@ export default function App() {
   // Helper to format simulation weeks into clear Month Year calendar blocks
   const getMilestoneDateStr = (weekNum: number) => {
     const startDelayDays = Math.max(timeline.paulanSettleEnd, timeline.merylSettleEnd);
-    const d = new Date(2026, 4, 15); // May 15, 2026
+    const d = new Date(2026, 6, 6); // July 6, 2026
     d.setDate(d.getDate() + startDelayDays + weekNum * 7);
     return d.toLocaleDateString("en-AU", { month: "long", year: "numeric" });
   };
 
   // Timeline Calculation: Decoupled into three parallel swimlanes
   const timeline = useMemo(() => {
-    const startDate = new Date(2026, 4, 15); // May 15, 2026
+    const startDate = new Date(2026, 6, 6); // July 6, 2026
 
     // 1. Meryl's Track (Green Sequential Shades)
     const merylPrepStart = inputs.merylStartDelay;
@@ -624,6 +624,51 @@ export default function App() {
   const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
       const next = { ...prev, [field]: value };
+
+      if (field === "useFixedDiscretionary") {
+        if (value === true) {
+          // Switching to Fixed Discretionary Cash:
+          // Initialize fixedDiscretionaryCash to current leftoverDiscretionaryCash
+          const totalOutlays = finances.totalCommittedWeeklyOutlays;
+          const currentLeftover = Math.max(0, 5303.35 - totalOutlays - prev.weeklySavings);
+          next.fixedDiscretionaryCash = Math.round(currentLeftover);
+        } else {
+          // Switching to Weekly Extra Savings:
+          // Initialize weeklySavings to current effectiveWeeklySavings
+          const totalOutlays = finances.totalCommittedWeeklyOutlays;
+          const currentSavings = Math.max(0, 5303.35 - totalOutlays - (prev.fixedDiscretionaryCash ?? 3000));
+          next.weeklySavings = Math.round(currentSavings);
+        }
+      } else if (field === "weeklySavings" && prev.useFixedDiscretionary) {
+        // In fixed discretionary mode, modifying weeklySavings directly also updates fixedDiscretionaryCash
+        const totalOutlays = finances.totalCommittedWeeklyOutlays;
+        next.fixedDiscretionaryCash = Math.max(0, Math.round(5303.35 - totalOutlays - value));
+      } else if (field === "fixedDiscretionaryCash") {
+        // Modifying fixedDiscretionaryCash updates weeklySavings
+        const totalOutlays = finances.totalCommittedWeeklyOutlays;
+        next.weeklySavings = Math.max(0, Math.round(5303.35 - totalOutlays - value));
+      } else if (field === "usePostBuildFixedDiscretionary") {
+        if (value === true) {
+          // Switching to Fixed Post-Build Discretionary Cash:
+          // Initialize postBuildFixedDiscretionaryCash to current post-build discretionary surplus
+          const postBuildGross = finances.postBuildGrossCashSurplus || 0;
+          const currentPostBuildSavings = newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : prev.weeklySavings;
+          const currentPostBuildLeftover = Math.max(0, postBuildGross - currentPostBuildSavings);
+          next.postBuildFixedDiscretionaryCash = Math.round(currentPostBuildLeftover);
+        } else {
+          // Switching to Post-Build Savings Rate:
+          // Initialize newBuildPostWeeklySavingsOverride to current effective post-build savings
+          const postBuildGross = finances.postBuildGrossCashSurplus || 0;
+          const currentPostBuildSavings = Math.max(0, postBuildGross - (prev.postBuildFixedDiscretionaryCash ?? 3000));
+          setNewBuildPostWeeklySavingsOverride(Math.round(currentPostBuildSavings));
+        }
+      } else if (field === "postBuildFixedDiscretionaryCash") {
+        // Modifying postBuildFixedDiscretionaryCash updates newBuildPostWeeklySavingsOverride
+        const postBuildGross = finances.postBuildGrossCashSurplus || 0;
+        const currentPostBuildSavings = Math.max(0, postBuildGross - value);
+        setNewBuildPostWeeklySavingsOverride(Math.round(currentPostBuildSavings));
+      }
+
       return adjustInputs(next);
     });
   };
@@ -998,7 +1043,7 @@ export default function App() {
     </div>
     
     <div class="footer">
-      Forever Home Financial Modeler • 419 Old Yarragon-Leongatha Road, Yarragon South • Baseline May 2026
+      Forever Home Financial Modeler • 419 Old Yarragon-Leongatha Road, Yarragon South • Baseline July 2026
     </div>
   </div>
 </body>
@@ -1033,7 +1078,7 @@ export default function App() {
               </span>
             </div>
             <p className="text-xs text-stone-500 mt-1 font-serif italic">
-              Multigenerational Transition & Cashflow Portfolio Modeler • Decided Property Scenario • Baseline May 2026
+              Multigenerational Transition & Cashflow Portfolio Modeler • Decided Property Scenario • Baseline July 2026
             </p>
           </div>
 
@@ -2075,38 +2120,142 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* RELOCATED WEEKLY SAVINGS RATE SLIDER & STRAIN BADGE */}
-                <div className="bg-stone-50 p-3 rounded-lg border border-stone-200 space-y-2">
-                  <div className="flex justify-between items-center text-stone-750">
-                    <div className="flex items-center gap-1">
-                      <span className="font-bold">Weekly Extra Savings rate:</span>
-                      <div className="group relative cursor-pointer inline-flex items-center text-[10px] bg-stone-200 hover:bg-stone-300 w-4 h-4 justify-center rounded-full text-stone-600 select-none">
-                        ?
-                        <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 hidden group-hover:block bg-stone-900 text-white text-[10px] p-2.5 rounded shadow-lg font-serif z-50 leading-relaxed font-normal">
-                          Elective cash regularly deposited to offsets to shorten mortgage durations. High settings test savings threshold tolerance.
+                {/* CASH FLOW MODE TOGGLE, DUAL SLIDERS & ANZ SAVINGS RATE */}
+                <div className="bg-stone-50 p-4 rounded-lg border border-stone-200 space-y-4">
+                  {/* Mode Selector */}
+                  <div className="space-y-1.5 pb-1 border-b border-stone-200">
+                    <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider block font-serif">
+                      Cash Flow Control Mode
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 no-print mt-1">
+                      <button
+                        onClick={() => handleInputChange("useFixedDiscretionary", false)}
+                        className={`px-2 py-1.5 rounded border text-center font-serif text-[10.5px] font-medium transition-all cursor-pointer ${
+                          !inputs.useFixedDiscretionary
+                            ? "bg-emerald-800 text-white border-emerald-900 shadow-sm font-bold"
+                            : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+                        }`}
+                      >
+                        Adjust Savings Rate
+                      </button>
+                      <button
+                        onClick={() => handleInputChange("useFixedDiscretionary", true)}
+                        className={`px-2 py-1.5 rounded border text-center font-serif text-[10.5px] font-medium transition-all cursor-pointer ${
+                          inputs.useFixedDiscretionary
+                            ? "bg-emerald-800 text-white border-emerald-900 shadow-sm font-bold"
+                            : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+                        }`}
+                      >
+                        Fix Discretionary Cash
+                      </button>
+                    </div>
+                  </div>
+
+                  {!inputs.useFixedDiscretionary ? (
+                    /* SAVINGS RATE MODE */
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-stone-750">
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold">Weekly Extra Savings rate:</span>
+                          <div className="group relative cursor-pointer inline-flex items-center text-[10px] bg-stone-200 hover:bg-stone-300 w-4 h-4 justify-center rounded-full text-stone-600 select-none">
+                            ?
+                            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 hidden group-hover:block bg-stone-900 text-white text-[10px] p-2.5 rounded shadow-lg font-serif z-50 leading-relaxed font-normal">
+                              Elective cash regularly deposited to offsets to shorten mortgage durations. High settings test savings threshold tolerance.
+                            </span>
+                          </div>
+                        </div>
+                        <span className="font-mono font-bold text-emerald-800 text-sm">
+                          ${inputs.weeklySavings}/wk
                         </span>
                       </div>
+                      
+                      <input
+                        type="range"
+                        min={0}
+                        max={3000}
+                        step={50}
+                        value={inputs.weeklySavings}
+                        onChange={(e) =>
+                          handleInputChange("weeklySavings", parseInt(e.target.value))
+                        }
+                        className="w-full accent-emerald-700 cursor-pointer h-1.5 bg-stone-200 rounded-lg animate-fade-in"
+                      />
+                      
+                      <div className="flex justify-between text-[9px] text-stone-400">
+                        <span>$0 min</span>
+                        <span>$3,000/wk cap</span>
+                      </div>
                     </div>
-                    <span className="font-mono font-bold text-emerald-800 text-sm">
-                      ${inputs.weeklySavings}/wk
-                    </span>
-                  </div>
-                  
-                  <input
-                    type="range"
-                    min={0}
-                    max={3000}
-                    step={50}
-                    value={inputs.weeklySavings}
-                    onChange={(e) =>
-                      handleInputChange("weeklySavings", parseInt(e.target.value))
-                    }
-                    className="w-full accent-emerald-700 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
-                  />
-                  
-                  <div className="flex justify-between text-[9px] text-stone-400">
-                    <span>$0 min</span>
-                    <span>$3,000/wk cap</span>
+                  ) : (
+                    /* FIXED DISCRETIONARY CASH MODE */
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center text-stone-750">
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold">Fixed Discretionary Cash:</span>
+                          <div className="group relative cursor-pointer inline-flex items-center text-[10px] bg-stone-200 hover:bg-stone-300 w-4 h-4 justify-center rounded-full text-stone-600 select-none">
+                            ?
+                            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 hidden group-hover:block bg-stone-900 text-white text-[10px] p-2.5 rounded shadow-lg font-serif z-50 leading-relaxed font-normal">
+                              The fixed amount of uncommitted cash you want to keep for personal/family overheads per week. Any income beyond this and your loan payments is automatically saved!
+                            </span>
+                          </div>
+                        </div>
+                        <span className="font-mono font-bold text-indigo-900 text-sm">
+                          ${inputs.fixedDiscretionaryCash}/wk
+                        </span>
+                      </div>
+                      
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays))}
+                        step={50}
+                        value={inputs.fixedDiscretionaryCash ?? 3000}
+                        onChange={(e) =>
+                          handleInputChange("fixedDiscretionaryCash", parseInt(e.target.value))
+                        }
+                        className="w-full accent-indigo-700 cursor-pointer h-1.5 bg-stone-200 rounded-lg animate-fade-in"
+                      />
+                      
+                      <div className="flex justify-between text-[9px] text-stone-400">
+                        <span>$0 min</span>
+                        <span>${Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk cap</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ANZ SAVINGS ACCOUNT RATE OF RETURN */}
+                  <div className="space-y-2 pt-2 border-t border-stone-200">
+                    <div className="flex justify-between items-center text-stone-750">
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold">ANZ Plus Savings Rate:</span>
+                        <div className="group relative cursor-pointer inline-flex items-center text-[10px] bg-stone-200 hover:bg-stone-300 w-4 h-4 justify-center rounded-full text-stone-600 select-none">
+                          ?
+                          <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-48 hidden group-hover:block bg-stone-900 text-white text-[10px] p-2.5 rounded shadow-lg font-serif z-50 leading-relaxed font-normal">
+                            The current rate of return on cash savings (ANZ Plus Save current rate is ~4.75% p.a.). Cash savings accumulate interest at this rate once loans are fully offset.
+                          </span>
+                        </div>
+                      </div>
+                      <span className="font-mono font-bold text-blue-900 text-sm">
+                        {(inputs.anzSavingsRate ?? 4.75).toFixed(2)}% p.a.
+                      </span>
+                    </div>
+                    
+                    <input
+                      type="range"
+                      min={0.0}
+                      max={8.0}
+                      step={0.1}
+                      value={inputs.anzSavingsRate ?? 4.75}
+                      onChange={(e) =>
+                        handleInputChange("anzSavingsRate", parseFloat(e.target.value))
+                      }
+                      className="w-full accent-blue-900 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                    />
+                    
+                    <div className="flex justify-between text-[9px] text-stone-400">
+                      <span>0.0% min</span>
+                      <span>8.0% p.a. cap</span>
+                    </div>
                   </div>
 
                   {finances.leftoverDiscretionaryCash < 0 && (
@@ -3734,11 +3883,14 @@ export default function App() {
 
                   const totalRepayments = fhRepayment + fernRepayment + nbRepayment + totalExpenseLoansPayment;
 
-                  // Resolve the post-build weekly savings rate (defaulting to the other weekly savings rate variable)
-                  const finalWeeklySavings = newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : inputs.weeklySavings;
-
                   // 3. Discretionary cash surplus calculations
                   const grossCashSurplus = totalWeeklyNetIncome - totalRepayments;
+
+                  // Resolve the post-build weekly savings rate (defaulting to the other weekly savings rate variable)
+                  const finalWeeklySavings = inputs.usePostBuildFixedDiscretionary
+                    ? Math.max(0, Math.round(grossCashSurplus - (inputs.postBuildFixedDiscretionaryCash ?? 3000)))
+                    : (newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : inputs.weeklySavings);
+
                   const netCashSurplus = grossCashSurplus - finalWeeklySavings;
 
                   // Percentages for the waterfall visual representation
@@ -3768,50 +3920,135 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* POST-BUILD SAVINGS OVERRIDE SLIDER */}
-                      <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-150 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                        <div className="space-y-1 md:max-w-md">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-sans font-bold text-xs text-purple-900">Post-New Build Weekly Savings Rate</span>
-                            {newBuildPostWeeklySavingsOverride !== null && (
-                              <button 
-                                onClick={() => setNewBuildPostWeeklySavingsOverride(null)}
-                                className="text-[10px] text-purple-600 hover:text-purple-800 font-sans font-semibold underline cursor-pointer"
-                                title="Click to match the global savings rate again"
-                              >
-                                (Reset to match global: ${inputs.weeklySavings}/wk)
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-stone-550 leading-normal font-sans">
-                            {newBuildPostWeeklySavingsOverride === null ? (
-                              <span className="text-stone-400 italic">Currently matching your global Weekly Extra Savings Rate of <strong>${inputs.weeklySavings}/wk</strong>. Drag the slider to override this specifically for the post-build period.</span>
-                            ) : (
-                              <span className="text-purple-800 font-semibold">Custom post-build rate active. The timeline trajectory is unaffected; this is for post-build budgeting simulation only.</span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="w-full md:w-60 space-y-1.5 flex-shrink-0">
-                          <div className="flex justify-between text-xs font-sans">
-                            <span className="text-stone-400 font-normal">Adjustment:</span>
-                            <span className="font-mono font-bold text-purple-950">
-                              ${finalWeeklySavings.toLocaleString()}/wk
+                      {/* POST-BUILD CASH FLOW MODE TOGGLE & DUAL SLIDERS */}
+                      <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-150 space-y-4">
+                        {/* Mode Selector */}
+                        <div className="space-y-1.5 pb-2 border-b border-purple-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] text-purple-800 font-bold uppercase tracking-wider block font-sans">
+                              Post-Build Cash Flow Control Mode
                             </span>
+                            <p className="text-[9px] text-stone-500 leading-none font-sans">
+                              Choose how you want to manage your cash flow in the post-building loan period.
+                            </p>
                           </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={3000}
-                            step={50}
-                            value={finalWeeklySavings}
-                            onChange={(e) => setNewBuildPostWeeklySavingsOverride(parseInt(e.target.value))}
-                            className="w-full accent-purple-600 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
-                          />
-                          <div className="flex justify-between text-[9px] text-stone-400 font-sans">
-                            <span>$0/wk min</span>
-                            <span>$3,000/wk cap</span>
+                          <div className="grid grid-cols-2 gap-2 no-print self-start sm:self-center w-full sm:w-auto">
+                            <button
+                              onClick={() => handleInputChange("usePostBuildFixedDiscretionary", false)}
+                              className={`px-3 py-1 rounded border text-center font-sans text-[10px] font-bold tracking-tight transition-all cursor-pointer ${
+                                !inputs.usePostBuildFixedDiscretionary
+                                  ? "bg-purple-800 text-white border-purple-900 shadow-sm"
+                                  : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+                              }`}
+                            >
+                              Adjust Savings Rate
+                            </button>
+                            <button
+                              onClick={() => handleInputChange("usePostBuildFixedDiscretionary", true)}
+                              className={`px-3 py-1 rounded border text-center font-sans text-[10px] font-bold tracking-tight transition-all cursor-pointer ${
+                                inputs.usePostBuildFixedDiscretionary
+                                  ? "bg-purple-800 text-white border-purple-900 shadow-sm"
+                                  : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
+                              }`}
+                            >
+                              Fix Discretionary Cash
+                            </button>
                           </div>
                         </div>
+
+                        {!inputs.usePostBuildFixedDiscretionary ? (
+                          /* SAVINGS RATE MODE */
+                          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="space-y-1 md:max-w-md">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-sans font-bold text-xs text-purple-900">Post-New Build Weekly Savings Rate</span>
+                                {newBuildPostWeeklySavingsOverride !== null && (
+                                  <button 
+                                    onClick={() => setNewBuildPostWeeklySavingsOverride(null)}
+                                    className="text-[10px] text-purple-600 hover:text-purple-800 font-sans font-semibold underline cursor-pointer"
+                                    title="Click to match the global savings rate again"
+                                  >
+                                    (Reset to match global: ${inputs.weeklySavings}/wk)
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-stone-550 leading-normal font-sans">
+                                {newBuildPostWeeklySavingsOverride === null ? (
+                                  <span className="text-stone-400 italic">Currently matching your global Weekly Extra Savings Rate of <strong>${inputs.weeklySavings}/wk</strong>. Drag the slider to override this specifically for the post-build period.</span>
+                                ) : (
+                                  <span className="text-purple-800 font-semibold">Custom post-build savings rate active. This will affect your post-build mortgage amortization trajectory in the 30-year simulation.</span>
+                                )}
+                              </p>
+                            </div>
+                            <div className="w-full md:w-60 space-y-1.5 flex-shrink-0">
+                              <div className="flex justify-between text-xs font-sans">
+                                <span className="text-stone-400 font-normal">Adjustment:</span>
+                                <span className="font-mono font-bold text-purple-950">
+                                  ${finalWeeklySavings.toLocaleString()}/wk
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={Math.max(3000, Math.floor(grossCashSurplus))}
+                                step={50}
+                                value={finalWeeklySavings}
+                                onChange={(e) => setNewBuildPostWeeklySavingsOverride(parseInt(e.target.value))}
+                                className="w-full accent-purple-600 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                              />
+                              <div className="flex justify-between text-[9px] text-stone-400 font-sans">
+                                <span>$0/wk min</span>
+                                <span>${Math.max(3000, Math.floor(grossCashSurplus)).toLocaleString()}/wk cap</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          /* FIXED DISCRETIONARY CASH MODE */
+                          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                            <div className="space-y-1 md:max-w-md">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-sans font-bold text-xs text-purple-900">Post-New Build Fixed Discretionary Cash</span>
+                                <button 
+                                  onClick={() => {
+                                    // Reset to match the global uncommitted cash
+                                    const globalLeftover = finances.leftoverDiscretionaryCash || 500;
+                                    handleInputChange("postBuildFixedDiscretionaryCash", Math.round(globalLeftover));
+                                  }}
+                                  className="text-[10px] text-purple-600 hover:text-purple-800 font-sans font-semibold underline cursor-pointer"
+                                  title="Click to match the global uncommitted discretionary cash"
+                                >
+                                  (Reset to match global uncommitted: ${Math.round(finances.leftoverDiscretionaryCash || 0)}/wk)
+                                </button>
+                              </div>
+                              <p className="text-[10px] text-stone-550 leading-normal font-sans">
+                                <span className="text-purple-800 font-semibold">
+                                  Post-build discretionary spending is fixed. Any additional cash surplus is automatically saved, accelerating offset accumulation.
+                                </span>
+                              </p>
+                            </div>
+                            <div className="w-full md:w-60 space-y-1.5 flex-shrink-0">
+                              <div className="flex justify-between text-xs font-sans">
+                                <span className="text-stone-400 font-normal">Adjustment:</span>
+                                <span className="font-mono font-bold text-purple-950">
+                                  ${(inputs.postBuildFixedDiscretionaryCash ?? 3000).toLocaleString()}/wk
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={Math.max(3000, Math.floor(grossCashSurplus))}
+                                step={50}
+                                value={inputs.postBuildFixedDiscretionaryCash ?? 3000}
+                                onChange={(e) => handleInputChange("postBuildFixedDiscretionaryCash", parseInt(e.target.value))}
+                                className="w-full accent-purple-600 cursor-pointer h-1.5 bg-stone-200 rounded-lg"
+                              />
+                              <div className="flex justify-between text-[9px] text-stone-400 font-sans">
+                                <span>$0/wk min</span>
+                                <span>${Math.max(3000, Math.floor(grossCashSurplus)).toLocaleString()}/wk cap</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Cash Flow Bento Cards */}
@@ -4106,7 +4343,7 @@ export default function App() {
                       if (!finances.simulationData || finances.simulationData.length === 0) return null;
 
                       // Calculate safe maximum bounds considering individual loans and offsets
-                      const maxDataVal = Math.max(
+                      const rawMaxDataVal = Math.max(
                         100000,
                         ...finances.simulationData.map((d: any) => Math.max(
                           d.loanFH || 0,
@@ -4121,8 +4358,11 @@ export default function App() {
                         ))
                       ) || 1200000;
 
+                      // Fix 2M as the absolute highest possible value for the y-axis (can go lower as it does now)
+                      const maxDataVal = Math.min(2000000, rawMaxDataVal);
+
                       // Make clean rounding steps for cleaner lines
-                      const yStep = maxDataVal > 2000000 ? 500000 : maxDataVal > 1000000 ? 250000 : maxDataVal > 500000 ? 200000 : 100000;
+                      const yStep = maxDataVal >= 2000000 ? 500000 : maxDataVal > 1000000 ? 250000 : maxDataVal > 500000 ? 200000 : 100000;
                       const yMax = Math.ceil(maxDataVal / yStep) * yStep;
 
                       const yTicks = [];
@@ -4131,7 +4371,7 @@ export default function App() {
                       }
 
                       const getX = (index: number) => 60 + (index / (finances.simulationData.length - 1)) * 700;
-                      const getY = (val: number) => 240 - (Math.max(0, val) / yMax) * 200;
+                      const getY = (val: number) => 240 - (Math.min(yMax, Math.max(0, val)) / yMax) * 200;
 
                       let fhLoanPoints = "";
                       let fhOffsetPoints = "";

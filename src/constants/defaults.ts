@@ -2,12 +2,12 @@ import { PropertyInputs } from "../types";
 
 export const DECIDED_PROPERTY_ADDRESS = "419 Old Yarragon-Leongatha Road, Yarragon South, VIC";
 
-// Stated Financial Position as of May 27, 2026
+// Stated Financial Position as of July 6, 2026
 export const ACCOUNT_BALANCES = {
-  fernLoan: 573073,
-  paulansLoan: 381446,
-  fernOffset: 238374,
-  paulansOffset: 381456,
+  fernLoan: 570016.29,
+  paulansLoan: 377965.85,
+  fernOffset: 199185.11,
+  paulansOffset: 377965.85,
 };
 
 export const DEFAULT_INPUTS: PropertyInputs = {
@@ -15,20 +15,20 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   paulanSalePrice: 740000,         // Locked Paulan Court purchase/sale price
   merylSalePrice: 730000,          // Twin Ranges gross sale price
   merylContribution: 700000,       // Meryl's Granny Flat cash injection (post-settlement)
-  paulanOffsetPulled: 381456,      // Programmatic (read-only indicator fallback)
-  fernOffsetPulled: 238374,        // Programmatic (read-only indicator fallback)
+  paulanOffsetPulled: 377965.85,    // Programmatic (read-only indicator fallback)
+  fernOffsetPulled: 199185.11,      // Programmatic (read-only indicator fallback)
   offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
   weeklySavings: 0,                // Extra savings allocated to offset weekly
   interestRate: 6.05,              // Variable loan rate
   
   // Parallel timeline delays
   merylStartDelay: 0,              // Timeline start
-  merylPrepDays: 90,               // Default 90 days ending in mid-August
+  merylPrepDays: 40,               // Default 40 days ending in mid-August (15th of August)
   merylCampaignDays: 45,           // Listed for sale campaign (average time on market)
   merylSettleDays: 60,             // Twin Ranges settlement period
   
-  fhStartDelay: 19,                // Independent contract sign / prep delay to set 03/06/26 start
-  fhSettleDays: 107,               // Settlement on Forever Home (runs to 18/09/26)
+  fhStartDelay: 0,                 // Starts from Start
+  fhSettleDays: 74,                // Settlement on Forever Home (runs to 18/09/26)
   renoDays: 3,                     // Renovation period
   moveDays: 10,                    // Move-in duration
   
@@ -56,6 +56,11 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   paulanSellLater: false,
   paulanYearsBeforeSale: 10,
   paulanGrowthRate: 5.0,
+  useFixedDiscretionary: false,
+  fixedDiscretionaryCash: 3000,
+  anzSavingsRate: 3.75,
+  usePostBuildFixedDiscretionary: false,
+  postBuildFixedDiscretionaryCash: 3000,
 };
 
 // Helper to consolidate, clamp and adjust financial parameters dynamically in response to slider changes
@@ -71,9 +76,9 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
   const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 700000));
 
   // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
-  const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 90) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
+  const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 40) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
   const gfiStart = merylSettleEnd + (newInputs.gfiStartOffset ?? 1);
-  const fhSettleEnd = (newInputs.fhStartDelay ?? 110) + (newInputs.fhSettleDays ?? 60);
+  const fhSettleEnd = (newInputs.fhStartDelay ?? 0) + (newInputs.fhSettleDays ?? 74);
   const gfiBeforeFHSettle = gfiStart <= fhSettleEnd;
 
   const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? merylContribution : 0);
@@ -103,6 +108,11 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     paulanSellLater: newInputs.paulanSellLater ?? false,
     paulanYearsBeforeSale: newInputs.paulanYearsBeforeSale ?? 10,
     paulanGrowthRate: newInputs.paulanGrowthRate ?? 5.0,
+    useFixedDiscretionary: newInputs.useFixedDiscretionary ?? false,
+    fixedDiscretionaryCash: newInputs.fixedDiscretionaryCash ?? 3000,
+    anzSavingsRate: newInputs.anzSavingsRate ?? 3.75,
+    usePostBuildFixedDiscretionary: newInputs.usePostBuildFixedDiscretionary ?? false,
+    postBuildFixedDiscretionaryCash: newInputs.postBuildFixedDiscretionaryCash ?? 3000,
   };
 };
 
