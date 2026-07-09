@@ -41,7 +41,7 @@ const ACCOUNT_BALANCES = {
   paulansLoan: 377965.85,
   paulansOffset: 377965.85,
   fernLoan: 570016.29,
-  fernOffset: 199185.11,
+  fernOffset: 220000.00,
 };
 
 export function TimelineView({
@@ -93,7 +93,7 @@ export function TimelineView({
               recastTriggerEvent: sc.inputs.recastTriggerEvent ?? "gfi",
               merylRentCostPerWeek: sc.inputs.merylRentCostPerWeek ?? 650,
               paulanOffsetPulled: sc.inputs.paulanOffsetPulled ?? 377965.85,
-              fernOffsetPulled: sc.inputs.fernOffsetPulled ?? 199185.11,
+              fernOffsetPulled: sc.inputs.fernOffsetPulled ?? 220000.00,
               paulanStrategy: sc.inputs.paulanStrategy ?? "sell",
               paulanWeeklyRent: sc.inputs.paulanWeeklyRent ?? 600,
               paulanWeeklyExpenses: sc.inputs.paulanWeeklyExpenses ?? 150,
@@ -140,7 +140,7 @@ export function TimelineView({
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
           paulanOffsetPulled: 377965.85,
-          fernOffsetPulled: 199185.11,
+          fernOffsetPulled: 220000.00,
           paulanStrategy: "sell",
           paulanWeeklyRent: 600,
           paulanWeeklyExpenses: 150,
@@ -181,7 +181,7 @@ export function TimelineView({
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
           paulanOffsetPulled: 377965.85,
-          fernOffsetPulled: 199185.11,
+          fernOffsetPulled: 220000.00,
           paulanStrategy: "sell",
           paulanWeeklyRent: 600,
           paulanWeeklyExpenses: 150,

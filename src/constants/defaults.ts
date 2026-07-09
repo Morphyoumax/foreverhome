@@ -6,7 +6,7 @@ export const DECIDED_PROPERTY_ADDRESS = "419 Old Yarragon-Leongatha Road, Yarrag
 export const ACCOUNT_BALANCES = {
   fernLoan: 570016.29,
   paulansLoan: 377965.85,
-  fernOffset: 199185.11,
+  fernOffset: 220000.00,
   paulansOffset: 377965.85,
 };
 
@@ -16,7 +16,7 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   merylSalePrice: 730000,          // Twin Ranges gross sale price
   merylContribution: 700000,       // Meryl's Granny Flat cash injection (post-settlement)
   paulanOffsetPulled: 377965.85,    // Programmatic (read-only indicator fallback)
-  fernOffsetPulled: 199185.11,      // Programmatic (read-only indicator fallback)
+  fernOffsetPulled: 220000.00,      // Programmatic (read-only indicator fallback)
   offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
   weeklySavings: 0,                // Extra savings allocated to offset weekly
   interestRate: 6.05,              // Variable loan rate
