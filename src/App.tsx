@@ -971,7 +971,14 @@ export default function App() {
             </tr>
             <tr>
               <td>Weekly Savings Buffer Addition</td>
-              <td class="mono font-bold">$${inputs.weeklySavings}/wk</td>
+              <td className="mono font-bold" style={{ color: inputs.useFixedDiscretionary ? '#4f46e5' : '#0d9488' }}>
+                ${Math.round(finances.effectiveWeeklySavings)}/wk
+                {inputs.useFixedDiscretionary && (
+                  <span className="text-[9px] text-stone-400 font-normal block font-sans">
+                    (derived from $3k/wk discretionary)
+                  </span>
+                )}
+              </td>
             </tr>
             <tr>
               <td>Principal Reduction Split (Recast)</td>
@@ -1262,30 +1269,59 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 4. Weekly Extra Savings Rate */}
-                  <div className="space-y-1 pt-3 border-t border-stone-100">
-                    <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
-                      <span>Weekly Extra Savings Rate:</span>
-                      <span className="font-mono font-bold text-teal-800">
-                        ${inputs.weeklySavings}/wk
-                      </span>
+                  {/* 4. Weekly Extra Savings Rate / Fixed Discretionary */}
+                  {!inputs.useFixedDiscretionary ? (
+                    <div className="space-y-1 pt-3 border-t border-stone-100">
+                      <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                        <span>Weekly Extra Savings Rate:</span>
+                        <span className="font-mono font-bold text-teal-800">
+                          ${inputs.weeklySavings}/wk
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={5000}
+                        step={100}
+                        value={inputs.weeklySavings}
+                        onChange={(e) =>
+                          handleInputChange("weeklySavings", parseInt(e.target.value))
+                        }
+                        className="w-full accent-teal-600 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>Min: $0/wk</span>
+                        <span>Max: $5.0k/wk</span>
+                      </div>
                     </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={5000}
-                      step={100}
-                      value={inputs.weeklySavings}
-                      onChange={(e) =>
-                        handleInputChange("weeklySavings", parseInt(e.target.value))
-                      }
-                      className="w-full accent-teal-600 cursor-pointer"
-                    />
-                    <div className="flex justify-between text-[9px] text-stone-400 font-mono">
-                      <span>Min: $0/wk</span>
-                      <span>Max: $5.0k/wk</span>
+                  ) : (
+                    <div className="space-y-1 pt-3 border-t border-stone-100">
+                      <div className="flex justify-between text-xs font-semibold text-stone-700 font-serif">
+                        <span>Fixed Discretionary Cash:</span>
+                        <span className="font-mono font-bold text-indigo-900">
+                          ${inputs.fixedDiscretionaryCash}/wk
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays))}
+                        step={50}
+                        value={inputs.fixedDiscretionaryCash ?? 3000}
+                        onChange={(e) =>
+                          handleInputChange("fixedDiscretionaryCash", parseInt(e.target.value))
+                        }
+                        className="w-full accent-indigo-700 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[9px] text-stone-400 font-mono">
+                        <span>Min: $0/wk</span>
+                        <span>Max: ${Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk</span>
+                      </div>
+                      <div className="text-[9px] text-indigo-600 italic font-sans mt-1">
+                        Derived Savings: ${Math.round(finances.effectiveWeeklySavings)}/wk
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* 5. Recast Slider (Smaller footprint) */}
                   <div className="space-y-1 pt-3 border-t border-stone-100">
@@ -2002,7 +2038,7 @@ export default function App() {
                       </span>
                       
                       <p className="font-serif leading-relaxed text-[11px]">
-                        Your planned budget allocates a **Weekly Extra Savings Rate** of <strong className="text-emerald-800 font-semibold">${inputs.weeklySavings.toLocaleString()}</strong> per week to accelerate loan offsets.
+                        Your planned budget allocates a **Weekly Extra Savings Rate** of <strong className="text-emerald-800 font-semibold">${Math.round(finances.effectiveWeeklySavings).toLocaleString()}</strong> per week {inputs.useFixedDiscretionary ? "(dynamically calculated from your $3,000/wk fixed discretionary cash ceiling)" : ""} to accelerate loan offsets.
                       </p>
                       <p className="font-serif leading-relaxed text-[11px]">
                         <strong>Redirection cascade active:</strong> as individual loans are fully paid off, their respective weekly repayments are dynamically redirected into remaining offsets, compounding the speed of your portfolio\'s debt reduction.
@@ -2304,7 +2340,7 @@ export default function App() {
                     Mortgage-to-Income Strain Ratio with Extra Savings
                   </span>
                   <p className="text-[10px] text-stone-500 mt-0.5">
-                    Includes both mandatory repayments and your custom weekly extra savings rate of <strong className="font-mono">${inputs.weeklySavings}/wk</strong> on the mortgage/offset side.
+                    Includes both mandatory repayments and your custom weekly extra savings rate of <strong className="font-mono">${Math.round(finances.effectiveWeeklySavings)}/wk</strong> on the mortgage/offset side.
                   </p>
                 </div>
                 <div className="text-right">
@@ -2431,7 +2467,7 @@ export default function App() {
                 </div>
                 <div className="text-[10px] text-stone-400 border-t border-stone-100 pt-3 mt-3 font-serif leading-relaxed">
                   Wipes out your Forever Home interest exposure completely. Dynamic
-                  based on your ${inputs.weeklySavings}/wk contributions.
+                  based on your ${Math.round(finances.effectiveWeeklySavings)}/wk contributions.
                 </div>
               </div>
 
@@ -3968,13 +4004,13 @@ export default function App() {
                                     className="text-[10px] text-purple-600 hover:text-purple-800 font-sans font-semibold underline cursor-pointer"
                                     title="Click to match the global savings rate again"
                                   >
-                                    (Reset to match global: ${inputs.weeklySavings}/wk)
+                                    (Reset to match global: ${Math.round(finances.effectiveWeeklySavings)}/wk)
                                   </button>
                                 )}
                               </div>
                               <p className="text-[10px] text-stone-550 leading-normal font-sans">
                                 {newBuildPostWeeklySavingsOverride === null ? (
-                                  <span className="text-stone-400 italic">Currently matching your global Weekly Extra Savings Rate of <strong>${inputs.weeklySavings}/wk</strong>. Drag the slider to override this specifically for the post-build period.</span>
+                                  <span className="text-stone-400 italic">Currently matching your global Weekly Extra Savings Rate of <strong>${Math.round(finances.effectiveWeeklySavings)}/wk</strong>. Drag the slider to override this specifically for the post-build period.</span>
                                 ) : (
                                   <span className="text-purple-800 font-semibold">Custom post-build savings rate active. This will affect your post-build mortgage amortization trajectory in the 30-year simulation.</span>
                                 )}
@@ -4597,7 +4633,7 @@ export default function App() {
                             <p className="text-[11px] text-stone-600">
                               When all mortgages and simulated loans in your active portfolio are 100% neutralized by offsets.
                               {finances.activeFullyOffsetWeek !== -1 ? (
-                                ` This is projected to occur in Yr ${finances.activeFullyOffsetYears} under the current setting of $${inputs.weeklySavings.toLocaleString()}/wk savings.`
+                                ` This is projected to occur in Yr ${finances.activeFullyOffsetYears} under the current setting of $${Math.round(finances.effectiveWeeklySavings).toLocaleString()}/wk savings.`
                               ) : (
                                 " Increasing your weekly savings rate or routing sale proceeds would pull this timeline forward."
                               )}

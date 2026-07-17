@@ -13,8 +13,8 @@ export const ACCOUNT_BALANCES = {
 export const DEFAULT_INPUTS: PropertyInputs = {
   purchasePrice: 1070000,          // Default Forever Home purchase price
   paulanSalePrice: 740000,         // Locked Paulan Court purchase/sale price
-  merylSalePrice: 730000,          // Twin Ranges gross sale price
-  merylContribution: 700000,       // Meryl's Granny Flat cash injection (post-settlement)
+  merylSalePrice: 690000,          // Twin Ranges gross sale price
+  merylContribution: 672750,       // Meryl's Granny Flat cash injection (post-settlement)
   paulanOffsetPulled: 377965.85,    // Programmatic (read-only indicator fallback)
   fernOffsetPulled: 220000.00,      // Programmatic (read-only indicator fallback)
   offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
@@ -37,7 +37,7 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   paulanCampaignDays: 28,          // Paulan marketing
   paulanSettleDays: 60,            // Settlement period on selling Paulan Court
   
-  internalVariationPct: 50,        // 0% = Keep all post-sale cash in Offset, 100% = Pay down Loan Principal (Recast)
+  internalVariationPct: 100,       // 0% = Keep all post-sale cash in Offset, 100% = Pay down Loan Principal (Recast)
   depletionPriorityToggle: "paulan", // Default priority
   stampDutyRate: 5.5,              // Stamp Duty / purchase cost percent (defaults to Victoria 5.5%)
   
@@ -56,10 +56,10 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   paulanSellLater: false,
   paulanYearsBeforeSale: 10,
   paulanGrowthRate: 5.0,
-  useFixedDiscretionary: false,
+  useFixedDiscretionary: true,
   fixedDiscretionaryCash: 3000,
   anzSavingsRate: 3.75,
-  usePostBuildFixedDiscretionary: false,
+  usePostBuildFixedDiscretionary: true,
   postBuildFixedDiscretionaryCash: 3000,
 };
 
@@ -71,9 +71,9 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
   const minCashRequiredForSettlement = Math.max(0, totalAcquisitionCost - 1500000);
 
   // Dynamic merylNetProceeds clamping
-  const merylSale = newInputs.merylSalePrice ?? 730000;
+  const merylSale = newInputs.merylSalePrice ?? 690000;
   const merylNet = Math.max(0, merylSale - (merylSale * 0.025) - (newInputs.merylRenoCost ?? 0));
-  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 700000));
+  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 672750));
 
   // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
   const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 40) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
@@ -108,10 +108,10 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     paulanSellLater: newInputs.paulanSellLater ?? false,
     paulanYearsBeforeSale: newInputs.paulanYearsBeforeSale ?? 10,
     paulanGrowthRate: newInputs.paulanGrowthRate ?? 5.0,
-    useFixedDiscretionary: newInputs.useFixedDiscretionary ?? false,
+    useFixedDiscretionary: newInputs.useFixedDiscretionary ?? true,
     fixedDiscretionaryCash: newInputs.fixedDiscretionaryCash ?? 3000,
     anzSavingsRate: newInputs.anzSavingsRate ?? 3.75,
-    usePostBuildFixedDiscretionary: newInputs.usePostBuildFixedDiscretionary ?? false,
+    usePostBuildFixedDiscretionary: newInputs.usePostBuildFixedDiscretionary ?? true,
     postBuildFixedDiscretionaryCash: newInputs.postBuildFixedDiscretionaryCash ?? 3000,
   };
 };

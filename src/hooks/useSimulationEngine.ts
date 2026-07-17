@@ -127,7 +127,7 @@ export function useSimulationEngine({
         );
 
     // Meryl's Twin Ranges sale details with dynamic sale price
-    const merylGrossProceeds = inputs.merylSalePrice ?? 730000;
+    const merylGrossProceeds = inputs.merylSalePrice ?? 690000;
     const merylSellingFees = merylGrossProceeds * 0.025; // 2.5% standard commissions, marketing, conveyancing, legals
     const merylNetProceeds = Math.max(
       0,
@@ -663,14 +663,22 @@ export function useSimulationEngine({
           newBuildWeeklyPayment = rLoanWeekly > 0 
             ? (newBuildLoanAmountVal * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
             : 0;
-
-          // Move remaining extra cash savings completely into the new build offset loan as a priority!
-          if (simExtraCashSavings > 0) {
-            const depositToNB = Math.min(simExtraCashSavings, simLoanNewBuild - simOffsetNewBuild);
-            simOffsetNewBuild += depositToNB;
-            simExtraCashSavings -= depositToNB;
-          }
         }
+
+        // Redistribute ALL remaining cash reserves in order of priority: Forever Home, New Build, Fern St, then Extra Savings
+        const totalRemainingReserves = simOffsetFH + simOffsetFern + simOffsetNewBuild + simExtraCashSavings;
+        let pool = totalRemainingReserves;
+
+        simOffsetFH = Math.min(pool, simLoanFH);
+        pool -= simOffsetFH;
+
+        simOffsetNewBuild = Math.min(pool, simLoanNewBuild);
+        pool -= simOffsetNewBuild;
+
+        simOffsetFern = Math.min(pool, simLoanFern);
+        pool -= simOffsetFern;
+
+        simExtraCashSavings = pool;
 
         // Calculate postBuildGrossCashSurplusVal at exact build week
         const activeExtraIncomesAtBuild = futureIncomes.filter(inc => {
@@ -912,19 +920,10 @@ export function useSimulationEngine({
 
         if (savingsDeficit > 0) {
           if (inputs.depletionPriorityToggle === "paulan") {
-            const pullFH = Math.min(simOffsetFH, savingsDeficit);
-            simOffsetFH -= pullFH;
-            savingsDeficit -= pullFH;
-            if (inputs.paulanStrategy === "rent" && savingsDeficit > 0) {
-              const pullP = Math.min(simOffsetPaulan, savingsDeficit);
-              simOffsetPaulan -= pullP;
-              savingsDeficit -= pullP;
-            }
-            if (savingsDeficit > 0) {
-              const pullFern = Math.min(simOffsetFern, savingsDeficit);
-              simOffsetFern -= pullFern;
-              savingsDeficit -= pullFern;
-            }
+            const pullFern = Math.min(simOffsetFern, savingsDeficit);
+            simOffsetFern -= pullFern;
+            savingsDeficit -= pullFern;
+
             if (savingsDeficit > 0) {
               for (let i = 0; i < activeNewLoans.length; i++) {
                 const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
@@ -938,15 +937,21 @@ export function useSimulationEngine({
               simOffsetNewBuild -= pullNB;
               savingsDeficit -= pullNB;
             }
-          } else {
-            const pullFern = Math.min(simOffsetFern, savingsDeficit);
-            simOffsetFern -= pullFern;
-            savingsDeficit -= pullFern;
             if (savingsDeficit > 0) {
               const pullFH = Math.min(simOffsetFH, savingsDeficit);
               simOffsetFH -= pullFH;
               savingsDeficit -= pullFH;
             }
+            if (inputs.paulanStrategy === "rent" && savingsDeficit > 0) {
+              const pullP = Math.min(simOffsetPaulan, savingsDeficit);
+              simOffsetPaulan -= pullP;
+              savingsDeficit -= pullP;
+            }
+          } else {
+            const pullFern = Math.min(simOffsetFern, savingsDeficit);
+            simOffsetFern -= pullFern;
+            savingsDeficit -= pullFern;
+
             if (savingsDeficit > 0) {
               for (let i = 0; i < activeNewLoans.length; i++) {
                 const pullN = Math.min(activeNewLoans[i].offset, savingsDeficit);
@@ -964,6 +969,11 @@ export function useSimulationEngine({
               const pullNB = Math.min(simOffsetNewBuild, savingsDeficit);
               simOffsetNewBuild -= pullNB;
               savingsDeficit -= pullNB;
+            }
+            if (savingsDeficit > 0) {
+              const pullFH = Math.min(simOffsetFH, savingsDeficit);
+              simOffsetFH -= pullFH;
+              savingsDeficit -= pullFH;
             }
           }
         }
@@ -1560,7 +1570,7 @@ export function useSimulationEngine({
       postBuildGrossCashSurplus: postBuildGrossCashSurplusVal,
       postBuildWeeklySavings: (inputs.usePostBuildFixedDiscretionary
         ? Math.max(0, postBuildGrossCashSurplusVal - (inputs.postBuildFixedDiscretionaryCash ?? 3000))
-        : (newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : inputs.weeklySavings)),
+        : (newBuildPostWeeklySavingsOverride !== null ? newBuildPostWeeklySavingsOverride : effectiveWeeklySavings)),
     };
   }, [
     inputs,
