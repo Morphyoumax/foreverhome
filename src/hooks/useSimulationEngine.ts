@@ -244,6 +244,35 @@ export function useSimulationEngine({
     const rWeeklyFHSim = rWeekly;
     const w_paulan_sale = Math.round((inputs.paulanYearsBeforeSale ?? 10) * 52);
 
+    // Build event weeks set for high-resolution sampling around discrete events
+    const eventWeeks = new Set<number>();
+    eventWeeks.add(0);
+    eventWeeks.add(30 * 52);
+    eventWeeks.add(w_build);
+    if (w_build > 0) eventWeeks.add(w_build - 1);
+
+    if (inputs.paulanStrategy === "rent" && inputs.paulanSellLater) {
+      eventWeeks.add(w_paulan_sale);
+      if (w_paulan_sale > 0) eventWeeks.add(w_paulan_sale - 1);
+    }
+
+    futureExpenses.forEach((exp) => {
+      const ew = Math.round(exp.timingYears * 52);
+      eventWeeks.add(ew);
+      if (ew > 0) eventWeeks.add(ew - 1);
+    });
+
+    futureIncomes.forEach((inc) => {
+      const sw = Math.round(inc.timingStartYears * 52);
+      eventWeeks.add(sw);
+      if (sw > 0) eventWeeks.add(sw - 1);
+      if (inc.timingEndYears) {
+        const ew = Math.round(inc.timingEndYears * 52);
+        eventWeeks.add(ew);
+        if (ew > 0) eventWeeks.add(ew - 1);
+      }
+    });
+
     for (let w = 0; w <= 30 * 52; w++) {
       if (bSimExtraCashSavings > 0) {
         bSimExtraCashSavings += bSimExtraCashSavings * rWeeklySavings;
@@ -410,7 +439,7 @@ export function useSimulationEngine({
         bCashPool = 0;
       }
 
-      if (w % 13 === 0 || w === 30 * 52) {
+      if (w % 2 === 0 || eventWeeks.has(w)) {
         const tVal = w / 52;
         const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
         const fernVal = 850000 * Math.pow(1.05, tVal);
@@ -588,89 +617,101 @@ export function useSimulationEngine({
         paulanPaidOffWeek = w;
       }
 
+      const rebalanceCashReserves = () => {
+        let totalPool = simExtraCashSavings + simOffsetFH + simOffsetFern + simOffsetNewBuild + simOffsetPaulan;
+        activeNewLoans.forEach((loan) => {
+          totalPool += loan.offset;
+        });
+
+        let pool = totalPool;
+
+        // 1. Priority: Forever Home
+        simOffsetFH = Math.min(pool, simLoanFH);
+        pool -= simOffsetFH;
+
+        // 2. Priority: Paulan if prioritized
+        if (inputs.paulanStrategy === "rent" && inputs.depletionPriorityToggle === "paulan") {
+          simOffsetPaulan = Math.min(pool, simLoanPaulan);
+          pool -= simOffsetPaulan;
+        } else if (inputs.paulanStrategy !== "rent") {
+          simOffsetPaulan = 0;
+        }
+
+        // 3. Priority: New Build (if active)
+        if (w >= w_build && simLoanNewBuild > 0) {
+          simOffsetNewBuild = Math.min(pool, simLoanNewBuild);
+          pool -= simOffsetNewBuild;
+        } else {
+          simOffsetNewBuild = 0;
+        }
+
+        // 4. Priority: Fern St
+        simOffsetFern = Math.min(pool, simLoanFern);
+        pool -= simOffsetFern;
+
+        // 5. Priority: Paulan if not prioritized
+        if (inputs.paulanStrategy === "rent" && inputs.depletionPriorityToggle !== "paulan") {
+          simOffsetPaulan = Math.min(pool, simLoanPaulan);
+          pool -= simOffsetPaulan;
+        }
+
+        // 6. Priority: Active New Loans
+        activeNewLoans.forEach((loan) => {
+          if (loan.principal > 0) {
+            loan.offset = Math.min(pool, loan.principal);
+            pool -= loan.offset;
+          } else {
+            loan.offset = 0;
+          }
+        });
+
+        // 7. Priority: Extra Cash Savings
+        simExtraCashSavings = pool;
+      };
+
       // 1. Process future drawdowns/expenses starting this week
       futureExpenses.forEach((exp) => {
         const triggerWeek = Math.round(exp.timingYears * 52);
         if (w === triggerWeek) {
-          if (exp.source === "offset_fh") {
-            let needed = exp.amount;
-            // 1. Draw from FH offset
-            const pullFH = Math.min(simOffsetFH, needed);
-            simOffsetFH -= pullFH;
-            needed -= pullFH;
-            // 2. Draw from extra cash savings
-            if (needed > 0) {
-              const pullExtra = Math.min(simExtraCashSavings, needed);
-              simExtraCashSavings -= pullExtra;
-              needed -= pullExtra;
-            }
-            // 3. Draw from Fern offset
-            if (needed > 0) {
-              const pullFern = Math.min(simOffsetFern, needed);
-              simOffsetFern -= pullFern;
-              needed -= pullFern;
-            }
-            // 4. Draw from New Build offset
-            if (needed > 0 && simOffsetNewBuild > 0) {
-              const pullNB = Math.min(simOffsetNewBuild, needed);
-              simOffsetNewBuild -= pullNB;
-              needed -= pullNB;
-            }
-            // 5. Unfunded balance becomes a new loan
-            if (needed > 0) {
+          if (exp.source !== "new_loan") {
+            let totalReserves = simExtraCashSavings + simOffsetFH + simOffsetFern + simOffsetPaulan + simOffsetNewBuild;
+            activeNewLoans.forEach((l) => { totalReserves += l.offset; });
+
+            if (totalReserves >= exp.amount) {
+              const remainingPool = totalReserves - exp.amount;
+              simExtraCashSavings = remainingPool;
+              simOffsetFH = 0;
+              simOffsetFern = 0;
+              simOffsetPaulan = 0;
+              simOffsetNewBuild = 0;
+              activeNewLoans.forEach((l) => { l.offset = 0; });
+
+              rebalanceCashReserves();
+            } else {
+              const unfundedAmount = exp.amount - totalReserves;
+              simExtraCashSavings = 0;
+              simOffsetFH = 0;
+              simOffsetFern = 0;
+              simOffsetPaulan = 0;
+              simOffsetNewBuild = 0;
+              activeNewLoans.forEach((l) => { l.offset = 0; });
+
               const rLoanWeekly = rWeeklyFHSim;
               const nLoanWeeks = 30 * 52;
               const pmt = rLoanWeekly > 0 
-                ? (needed * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+                ? (unfundedAmount * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
                 : 0;
+
               activeNewLoans.push({
                 id: exp.id + "_unfunded",
-                amount: needed,
-                principal: needed,
+                amount: unfundedAmount,
+                principal: unfundedAmount,
                 weeklyPayment: pmt,
                 weekStarted: w,
                 offset: 0,
               });
-            }
-          } else if (exp.source === "offset_fern") {
-            let needed = exp.amount;
-            // 1. Draw from Fern offset
-            const pullFern = Math.min(simOffsetFern, needed);
-            simOffsetFern -= pullFern;
-            needed -= pullFern;
-            // 2. Draw from extra cash savings
-            if (needed > 0) {
-              const pullExtra = Math.min(simExtraCashSavings, needed);
-              simExtraCashSavings -= pullExtra;
-              needed -= pullExtra;
-            }
-            // 3. Draw from FH offset
-            if (needed > 0) {
-              const pullFH = Math.min(simOffsetFH, needed);
-              simOffsetFH -= pullFH;
-              needed -= pullFH;
-            }
-            // 4. Draw from New Build offset
-            if (needed > 0 && simOffsetNewBuild > 0) {
-              const pullNB = Math.min(simOffsetNewBuild, needed);
-              simOffsetNewBuild -= pullNB;
-              needed -= pullNB;
-            }
-            // 5. Unfunded balance becomes a new loan
-            if (needed > 0) {
-              const rLoanWeekly = rWeeklyFHSim;
-              const nLoanWeeks = 30 * 52;
-              const pmt = rLoanWeekly > 0 
-                ? (needed * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
-                : 0;
-              activeNewLoans.push({
-                id: exp.id + "_unfunded",
-                amount: needed,
-                principal: needed,
-                weeklyPayment: pmt,
-                weekStarted: w,
-                offset: 0,
-              });
+
+              rebalanceCashReserves();
             }
           } else if (exp.source === "new_loan") {
             // New loan P&I over standard 30-year term
@@ -688,49 +729,30 @@ export function useSimulationEngine({
               weekStarted: w,
               offset: 0,
             });
+
+            rebalanceCashReserves();
           }
         }
       });
 
       // Process New Build spending drawdown event at exact week
       if (w === w_build) {
-        liquidOffsetAtBuildVal = simOffsetFH + simOffsetFern + simExtraCashSavings;
+        let liquidOffsetAtBuildVal = simExtraCashSavings + simOffsetFH + simOffsetFern + simOffsetPaulan;
+        activeNewLoans.forEach((l) => { liquidOffsetAtBuildVal += l.offset; });
+
         const availableOffsets = Math.max(0, liquidOffsetAtBuildVal - newBuildBuffer);
         const preferredDraw = availableOffsets * (newBuildDrawChoicePct / 100);
         actualDrawFromOffsetsVal = Math.min(newBuildSpend, preferredDraw);
         newBuildLoanAmountVal = Math.max(0, newBuildSpend - actualDrawFromOffsetsVal);
 
-        // Deduct actualDrawFromOffsetsVal from our offset reserves / savings
-        let pullRemaining = actualDrawFromOffsetsVal;
-        if (pullRemaining > 0) {
-          // First draw from the extra cash savings!
-          const pullExtra = Math.min(simExtraCashSavings, pullRemaining);
-          simExtraCashSavings -= pullExtra;
-          pullRemaining -= pullExtra;
-
-          // If still remaining, draw from actual offset accounts based on toggle
-          if (pullRemaining > 0) {
-            if (inputs.depletionPriorityToggle === "paulan") {
-              const pullFH = Math.min(simOffsetFH, pullRemaining);
-              simOffsetFH -= pullFH;
-              pullRemaining -= pullFH;
-              if (pullRemaining > 0) {
-                const pullFern = Math.min(simOffsetFern, pullRemaining);
-                simOffsetFern -= pullFern;
-                pullRemaining -= pullFern;
-              }
-            } else {
-              const pullFern = Math.min(simOffsetFern, pullRemaining);
-              simOffsetFern -= pullFern;
-              pullRemaining -= pullFern;
-              if (pullRemaining > 0) {
-                const pullFH = Math.min(simOffsetFH, pullRemaining);
-                simOffsetFH -= pullFH;
-                pullRemaining -= pullFH;
-              }
-            }
-          }
-        }
+        // Deduct actualDrawFromOffsetsVal from cash reserves (from lowest priority first)
+        const remainingPool = Math.max(0, liquidOffsetAtBuildVal - actualDrawFromOffsetsVal);
+        simExtraCashSavings = remainingPool;
+        simOffsetFH = 0;
+        simOffsetFern = 0;
+        simOffsetPaulan = 0;
+        simOffsetNewBuild = 0;
+        activeNewLoans.forEach((l) => { l.offset = 0; });
 
         if (newBuildLoanAmountVal > 0) {
           simLoanNewBuild = newBuildLoanAmountVal;
@@ -741,20 +763,7 @@ export function useSimulationEngine({
             : 0;
         }
 
-        // Redistribute ALL remaining cash reserves in order of priority: Forever Home, New Build, Fern St, then Extra Savings
-        const totalRemainingReserves = simOffsetFH + simOffsetFern + simOffsetNewBuild + simExtraCashSavings;
-        let pool = totalRemainingReserves;
-
-        simOffsetFH = Math.min(pool, simLoanFH);
-        pool -= simOffsetFH;
-
-        simOffsetNewBuild = Math.min(pool, simLoanNewBuild);
-        pool -= simOffsetNewBuild;
-
-        simOffsetFern = Math.min(pool, simLoanFern);
-        pool -= simOffsetFern;
-
-        simExtraCashSavings = pool;
+        rebalanceCashReserves();
 
         // Calculate postBuildGrossCashSurplusVal at exact build week
         const activeExtraIncomesAtBuild = futureIncomes.filter(inc => {
@@ -1167,7 +1176,7 @@ export function useSimulationEngine({
         offsetPaulan: inputs.paulanStrategy === "rent" ? Math.round(simOffsetPaulan) : 0,
       });
 
-      if (w % 13 === 0 || w === 30 * 52) {
+      if (w % 2 === 0 || eventWeeks.has(w)) {
         const tVal = w / 52;
         const fhVal = inputs.purchasePrice * Math.pow(1.05, tVal);
         const fernVal = 850000 * Math.pow(1.05, tVal);

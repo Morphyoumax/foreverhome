@@ -2681,8 +2681,8 @@ export default function App() {
                   yTicks.push(val);
                 }
 
-                const getX = (index: number) =>
-                  60 + (index / (data.length - 1)) * 700;
+                const getX = (d: any) =>
+                  60 + ((d.week ?? (parseFloat(d.year) * 52)) / (maxDisplayYear * 52)) * 700;
                 const getY = (val: number) => 240 - (Math.min(yMax, Math.max(0, val)) / yMax) * 200;
 
                 let primaryLoanPoints = "";
@@ -2695,8 +2695,8 @@ export default function App() {
                 let extraSavingsPoints = "";
                 let netDebtPoints = "";
 
-                data.forEach((d, idx) => {
-                  const x = getX(idx);
+                data.forEach((d) => {
+                  const x = getX(d);
                   primaryLoanPoints += `${x.toFixed(1)},${getY(d.loanFH || 0).toFixed(1)} `;
                   primaryOffsetPoints += `${x.toFixed(1)},${getY(d.offsetFH || 0).toFixed(1)} `;
                   fernLoanPoints += `${x.toFixed(1)},${getY(d.loanFern || 0).toFixed(1)} `;
@@ -4490,7 +4490,7 @@ export default function App() {
                         yTicks.push(val);
                       }
 
-                      const getX = (index: number) => 60 + (index / (finances.simulationData.length - 1)) * 700;
+                      const getX = (d: any) => 60 + ((d.week ?? (parseFloat(d.year) * 52)) / (30 * 52)) * 700;
                       const getY = (val: number) => 240 - (Math.min(yMax, Math.max(0, val)) / yMax) * 200;
 
                       let fhLoanPoints = "";
@@ -4505,8 +4505,8 @@ export default function App() {
                       let activeNetDebtPoints = "";
                       let baselineNetDebtPoints = "";
 
-                      finances.simulationData.forEach((d: any, idx: number) => {
-                        const x = getX(idx);
+                      finances.simulationData.forEach((d: any) => {
+                        const x = getX(d);
 
                         fhLoanPoints += `${x.toFixed(2)},${getY(d.loanFH || 0).toFixed(2)} `;
                         fhOffsetPoints += `${x.toFixed(2)},${getY(d.offsetFH || 0).toFixed(2)} `;
@@ -4526,8 +4526,8 @@ export default function App() {
                       });
 
                       if (finances.baselineSimulationData) {
-                        finances.baselineSimulationData.forEach((bd: any, idx: number) => {
-                          const x = getX(idx);
+                        finances.baselineSimulationData.forEach((bd: any) => {
+                          const x = getX(bd);
                           baselineNetDebtPoints += `${x.toFixed(2)},${getY(Math.max(0, bd.netDebt || 0)).toFixed(2)} `;
                         });
                       }
@@ -4843,24 +4843,30 @@ export default function App() {
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-center text-[10px] font-mono leading-normal">
                     {(() => {
+                      const getMilestoneAtYear = (arr: any[], targetYr: number) => {
+                        if (!arr || arr.length === 0) return null;
+                        const targetWeek = targetYr * 52;
+                        return arr.find((d: any) => d.week >= targetWeek) || arr[arr.length - 1];
+                      };
+
                       const activeMilestones = [
-                        finances.simulationData[0], // Year 0
-                        finances.simulationData[Math.floor(finances.simulationData.length * 0.16)] || finances.simulationData[4], // Yr 5
-                        finances.simulationData[Math.floor(finances.simulationData.length * 0.33)] || finances.simulationData[8], // Yr 10
-                        finances.simulationData[Math.floor(finances.simulationData.length * 0.5)] || finances.simulationData[12], // Yr 15
-                        finances.simulationData[Math.floor(finances.simulationData.length * 0.66)] || finances.simulationData[16], // Yr 20
-                        finances.simulationData[Math.floor(finances.simulationData.length * 0.83)] || finances.simulationData[20], // Yr 25
-                        finances.simulationData[finances.simulationData.length - 1], // Year 30
+                        getMilestoneAtYear(finances.simulationData, 0),
+                        getMilestoneAtYear(finances.simulationData, 5),
+                        getMilestoneAtYear(finances.simulationData, 10),
+                        getMilestoneAtYear(finances.simulationData, 15),
+                        getMilestoneAtYear(finances.simulationData, 20),
+                        getMilestoneAtYear(finances.simulationData, 25),
+                        getMilestoneAtYear(finances.simulationData, 30),
                       ].filter(Boolean);
 
                       const baselineMilestones = [
-                        finances.baselineSimulationData[0],
-                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.16)] || finances.baselineSimulationData[4],
-                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.33)] || finances.baselineSimulationData[8],
-                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.5)] || finances.baselineSimulationData[12],
-                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.66)] || finances.baselineSimulationData[16],
-                        finances.baselineSimulationData[Math.floor(finances.baselineSimulationData.length * 0.83)] || finances.baselineSimulationData[20],
-                        finances.baselineSimulationData[finances.baselineSimulationData.length - 1],
+                        getMilestoneAtYear(finances.baselineSimulationData, 0),
+                        getMilestoneAtYear(finances.baselineSimulationData, 5),
+                        getMilestoneAtYear(finances.baselineSimulationData, 10),
+                        getMilestoneAtYear(finances.baselineSimulationData, 15),
+                        getMilestoneAtYear(finances.baselineSimulationData, 20),
+                        getMilestoneAtYear(finances.baselineSimulationData, 25),
+                        getMilestoneAtYear(finances.baselineSimulationData, 30),
                       ].filter(Boolean);
 
                       return activeMilestones.map((item: any, idx: number) => {
@@ -5167,19 +5173,19 @@ export default function App() {
                           yTicks.push(val);
                         }
 
-                        const getX = (index: number) => 70 + (index / (data.length - 1)) * 690;
+                        const getX = (d: any) => 70 + ((d.week ?? (parseFloat(d.year) * 52)) / (30 * 52)) * 690;
                         const getY = (val: number) => 230 - (val / yMax) * 190;
 
                         let activePoints = "";
                         let basePoints = "";
 
-                        data.forEach((d, idx) => {
-                          const x = getX(idx);
+                        data.forEach((d) => {
+                          const x = getX(d);
                           activePoints += `${x.toFixed(1)},${getY(d.netWealth ?? 0).toFixed(1)} `;
                         });
 
-                        baseData.forEach((d, idx) => {
-                          const x = getX(idx);
+                        baseData.forEach((d) => {
+                          const x = getX(d);
                           basePoints += `${x.toFixed(1)},${getY(d.netWealth ?? 0).toFixed(1)} `;
                         });
 
@@ -5267,14 +5273,10 @@ export default function App() {
 
                             {/* Accent highlight markers on active trajectory */}
                             {yearTicks.map(yr => {
-                              const yrDataIdx = Math.min(
-                                Math.round((yr / 30) * (data.length - 1)),
-                                data.length - 1
-                              );
-                              const d = data[yrDataIdx];
+                              const d = data.find((pt: any) => pt.week >= yr * 52) || data[data.length - 1];
                               if (!d) return null;
                               
-                              const x = getX(yrDataIdx);
+                              const x = getX(d);
                               const y = getY(d.netWealth ?? 0);
                               
                               return (
