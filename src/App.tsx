@@ -304,7 +304,7 @@ export default function App() {
 
   const [futureExpenses, setFutureExpenses] = useState<FutureExpense[]>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_future_expenses");
+      const saved = localStorage.getItem("property_scenarios_v11_future_expenses");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
@@ -312,16 +312,16 @@ export default function App() {
     return [
       {
         id: "exp-1",
-        name: "Construction/Renovation Drawdown",
-        amount: 150000,
-        timingYears: 2.0,
-        source: "new_loan",
+        name: "Meryl GF",
+        amount: 300000,
+        timingYears: 0.5,
+        source: "offset_fh",
       },
       {
         id: "exp-2",
-        name: "SUV / Tractor Purchase",
-        amount: 35000,
-        timingYears: 1.5,
+        name: "Ute and Buggy",
+        amount: 100000,
+        timingYears: 1.0,
         source: "offset_fh",
       },
     ];
@@ -329,7 +329,7 @@ export default function App() {
 
   const [futureIncomes, setFutureIncomes] = useState<FutureIncome[]>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_future_incomes");
+      const saved = localStorage.getItem("property_scenarios_v11_future_incomes");
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
@@ -337,9 +337,16 @@ export default function App() {
     return [
       {
         id: "inc-1",
-        name: "Acreage Cattle Agistment",
-        annualAmount: 30000,
-        timingStartYears: 2.0,
+        name: "Teaching",
+        annualAmount: 40000,
+        timingStartYears: 1.0,
+        timingEndYears: null,
+      },
+      {
+        id: "inc-2",
+        name: "Agistment",
+        annualAmount: 5000,
+        timingStartYears: 1.0,
         timingEndYears: null,
       },
     ];
@@ -347,7 +354,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_future_expenses", JSON.stringify(futureExpenses));
+      localStorage.setItem("property_scenarios_v11_future_expenses", JSON.stringify(futureExpenses));
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -355,7 +362,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_future_incomes", JSON.stringify(futureIncomes));
+      localStorage.setItem("property_scenarios_v11_future_incomes", JSON.stringify(futureIncomes));
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -1986,7 +1993,7 @@ export default function App() {
                           <strong className="text-blue-900">{inputs.internalVariationPct}% reduction</strong>: <strong>${Math.round(finances.appliedToPrincipalReduction).toLocaleString()}</strong> is paid directly to shrink the loan principal.
                         </li>
                         <li>
-                          <strong className="text-emerald-800">Offset preservation</strong>: <strong>${Math.round(finances.keptInOffsetAccount).toLocaleString()}</strong> is preserved in your offset account (leaving a liquid buffer after deducting ${Math.round(inputs.fhRenoMovingCost ?? 10000).toLocaleString()} for moving and reno outlays).
+                          <strong className="text-emerald-800">Offset preservation</strong>: <strong>${Math.round(finances.keptInOffsetAccount).toLocaleString()}</strong> is preserved in your offset account (leaving a liquid buffer after deducting ${Math.round(inputs.fhRenoMovingCost ?? 5000).toLocaleString()} for moving and reno outlays).
                         </li>
                       </ul>
                     </div>
@@ -2594,7 +2601,7 @@ export default function App() {
         <section className="bg-white border border-stone-200 p-6 rounded-xl space-y-6 shadow-sm print-card">
           <div>
             <h3 className="text-lg font-bold text-blue-900 font-serif">
-              Portfolio Financial Projection Trajectory (Up to 30 Years)
+              Portfolio Financial Projection Trajectory (First 4 Years)
             </h3>
             <p className="text-xs text-stone-500 mt-1 font-serif">
               Models the compounding impact of weekly extra offset accumulations and the Paulan proceeds release dynamically scaled to neutralize debt.
@@ -2603,7 +2610,7 @@ export default function App() {
 
           {/* TRAJECTORY GRAPH */}
           <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 relative">
-            <div className="absolute top-4 right-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-serif font-bold text-blue-950">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] font-serif font-bold text-blue-950 mb-3 justify-end leading-none print:hidden">
               <div className="flex items-center gap-1">
                 <span className="w-2.5 h-0.5 bg-purple-700 inline-block"></span>
                 <span>Primary Home Loan</span>
@@ -2614,7 +2621,27 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1">
                 <span className="w-2.5 h-0.5 bg-cyan-600 inline-block"></span>
-                <span>Fern St Holiday Loan</span>
+                <span>Fern St Loan</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-0.5 bg-amber-600 inline-block" style={{ borderBottom: "1.5px dashed #d97706" }}></span>
+                <span>Fern St Offset</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-0.5 bg-violet-700 inline-block"></span>
+                <span>New Build Loan</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-0.5 bg-orange-500 inline-block"></span>
+                <span>Expense Loans</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-0.5 bg-teal-500 inline-block" style={{ borderBottom: "1.5px dashed #14b8a6" }}></span>
+                <span>Extra Cash Savings (Income)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-0.5 bg-rose-600 inline-block"></span>
+                <span className="text-rose-700 font-extrabold">Net Portfolio Debt</span>
               </div>
             </div>
 
@@ -2623,64 +2650,69 @@ export default function App() {
               className="w-full h-auto overflow-visible select-none"
             >
               {(() => {
-                const maxDisplayYear = finances.bothNeutralizedWeek !== -1 ? Math.max(5, Math.ceil(finances.bothNeutralizedWeek / 52)) : 30;
+                const maxDisplayYear = 4;
                 const data = finances.simulationData.filter((d) => parseFloat(d.year) <= maxDisplayYear);
                 if (!data || data.length === 0) return null;
 
                 const maxDataVal =
                   Math.max(
+                    1000000,
                     ...data.map((d) =>
-                      Math.max(d.loanFH, d.offsetFH, d.loanFern, d.offsetFern)
+                      Math.max(
+                        d.loanFH || 0,
+                        d.offsetFH || 0,
+                        d.loanFern || 0,
+                        d.offsetFern || 0,
+                        d.newBuildLoan || 0,
+                        d.newBuildOffset || 0,
+                        d.newLoansPayable || 0,
+                        d.newLoansOffset || 0,
+                        d.extraCashSavings || 0,
+                        Math.max(0, d.netDebt || 0)
+                      )
                     )
                   ) || 1200000;
 
-                const yMax = Math.ceil(maxDataVal / 250000) * 250000;
+                const yStep = maxDataVal > 2500000 ? 500000 : maxDataVal > 1200000 ? 250000 : 200000;
+                const yMax = Math.ceil(maxDataVal / yStep) * yStep;
 
                 const yTicks = [];
-                for (let val = 0; val <= yMax; val += 250000) {
+                for (let val = 0; val <= yMax; val += yStep) {
                   yTicks.push(val);
                 }
 
                 const getX = (index: number) =>
                   60 + (index / (data.length - 1)) * 700;
-                const getY = (val: number) => 240 - (val / yMax) * 200;
+                const getY = (val: number) => 240 - (Math.min(yMax, Math.max(0, val)) / yMax) * 200;
 
                 let primaryLoanPoints = "";
                 let primaryOffsetPoints = "";
                 let fernLoanPoints = "";
                 let fernOffsetPoints = "";
+                let newBuildLoanPoints = "";
+                let newBuildOffsetPoints = "";
+                let newLoansPoints = "";
+                let extraSavingsPoints = "";
+                let netDebtPoints = "";
 
                 data.forEach((d, idx) => {
                   const x = getX(idx);
-                  primaryLoanPoints += `${x},${getY(d.loanFH)} `;
-                  primaryOffsetPoints += `${x},${getY(d.offsetFH)} `;
-                  fernLoanPoints += `${x},${getY(d.loanFern)} `;
-                  fernOffsetPoints += `${x},${getY(d.offsetFern)} `;
+                  primaryLoanPoints += `${x.toFixed(1)},${getY(d.loanFH || 0).toFixed(1)} `;
+                  primaryOffsetPoints += `${x.toFixed(1)},${getY(d.offsetFH || 0).toFixed(1)} `;
+                  fernLoanPoints += `${x.toFixed(1)},${getY(d.loanFern || 0).toFixed(1)} `;
+                  fernOffsetPoints += `${x.toFixed(1)},${getY(d.offsetFern || 0).toFixed(1)} `;
+                  newBuildLoanPoints += `${x.toFixed(1)},${getY(d.newBuildLoan || 0).toFixed(1)} `;
+                  newBuildOffsetPoints += `${x.toFixed(1)},${getY(d.newBuildOffset || 0).toFixed(1)} `;
+                  newLoansPoints += `${x.toFixed(1)},${getY(d.newLoansPayable || 0).toFixed(1)} `;
+                  extraSavingsPoints += `${x.toFixed(1)},${getY(d.extraCashSavings || 0).toFixed(1)} `;
+                  netDebtPoints += `${x.toFixed(1)},${getY(Math.max(0, d.netDebt || 0)).toFixed(1)} `;
                 });
 
-                // Generate year ticks dynamically
-                let xTickStep = 5;
-                if (maxDisplayYear <= 6) {
-                  xTickStep = 1;
-                } else if (maxDisplayYear <= 12) {
-                  xTickStep = 2;
-                } else if (maxDisplayYear <= 24) {
-                  xTickStep = 5;
-                } else {
-                  xTickStep = 5;
-                }
-
-                const xTicks: number[] = [];
-                for (let y = 0; y <= maxDisplayYear; y += xTickStep) {
-                  xTicks.push(y);
-                }
-                if (xTicks[xTicks.length - 1] !== maxDisplayYear && maxDisplayYear - xTicks[xTicks.length - 1] >= 1.5) {
-                  xTicks.push(maxDisplayYear);
-                }
+                const xTicks = [0, 1, 2, 3, 4];
 
                 return (
                   <g>
-                    {/* Y-Axis lines at 250k intervals */}
+                    {/* Y-Axis lines at dynamic intervals */}
                     {yTicks.map((tick) => {
                       const y = getY(tick);
                       const isBaseline = tick === 0;
@@ -2713,10 +2745,10 @@ export default function App() {
                       );
                     })}
 
-                    {/* X-Axis increments dynamically */}
+                    {/* X-Axis increments representing years up to 4 */}
                     {xTicks.map((yr) => {
                       const x = 60 + (yr / maxDisplayYear) * 700;
-                      const calYear = 2026 + Math.round(yr);
+                      const calYear = 2026 + yr;
                       return (
                         <g key={yr}>
                           <line
@@ -2739,7 +2771,7 @@ export default function App() {
                       );
                     })}
 
-                    {/* Simulation trajectories */}
+                    {/* Primary Home Loan & Offset */}
                     <polyline
                       fill="none"
                       stroke="#6b21a8"
@@ -2752,6 +2784,8 @@ export default function App() {
                       strokeWidth="2.5"
                       points={primaryOffsetPoints}
                     />
+
+                    {/* Fern St Holiday Loan & Offset */}
                     <polyline
                       fill="none"
                       stroke="#0891b2"
@@ -2763,7 +2797,47 @@ export default function App() {
                       stroke="#d97706"
                       strokeWidth="1.5"
                       points={fernOffsetPoints}
-                      strokeDasharray="2 2"
+                      strokeDasharray="3 3"
+                    />
+
+                    {/* New Build Loan & Offset (if any) */}
+                    <polyline
+                      fill="none"
+                      stroke="#7c3aed"
+                      strokeWidth="1.5"
+                      points={newBuildLoanPoints}
+                    />
+                    <polyline
+                      fill="none"
+                      stroke="#a855f7"
+                      strokeWidth="1.5"
+                      points={newBuildOffsetPoints}
+                      strokeDasharray="3 3"
+                    />
+
+                    {/* Future Expense Loans (if any) */}
+                    <polyline
+                      fill="none"
+                      stroke="#f97316"
+                      strokeWidth="2"
+                      points={newLoansPoints}
+                    />
+
+                    {/* Extra Cash Savings (Accumulated Future Incomes / Surplus) */}
+                    <polyline
+                      fill="none"
+                      stroke="#14b8a6"
+                      strokeWidth="2"
+                      points={extraSavingsPoints}
+                      strokeDasharray="4 3"
+                    />
+
+                    {/* Portfolio Net Debt Line */}
+                    <polyline
+                      fill="none"
+                      stroke="#e11d48"
+                      strokeWidth="2.5"
+                      points={netDebtPoints}
                     />
                   </g>
                 );
@@ -4334,6 +4408,14 @@ export default function App() {
                 <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 relative">
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] font-serif font-bold text-blue-950 mb-3 justify-end leading-none print:hidden">
                     <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-rose-500 inline-block" style={{ borderBottom: "1.5px dashed #f43f5e" }}></span>
+                      <span className="text-rose-700 font-extrabold">Baseline Net Debt (No Inc/Exp)</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="w-2.5 h-0.5 bg-teal-600 inline-block"></span>
+                      <span className="text-teal-800 font-extrabold">Active Net Debt (With Inc/Exp)</span>
+                    </div>
+                    <div className="flex items-center gap-1">
                       <span className="w-2.5 h-0.5 bg-indigo-500 inline-block"></span>
                       <span>FH Loan Principal</span>
                     </div>
@@ -4378,9 +4460,9 @@ export default function App() {
                     {(() => {
                       if (!finances.simulationData || finances.simulationData.length === 0) return null;
 
-                      // Calculate safe maximum bounds considering individual loans and offsets
+                      // Calculate safe maximum bounds considering individual loans, offsets, cash savings, and net debts
                       const rawMaxDataVal = Math.max(
-                        100000,
+                        1000000,
                         ...finances.simulationData.map((d: any) => Math.max(
                           d.loanFH || 0,
                           d.offsetFH || 0,
@@ -4390,16 +4472,18 @@ export default function App() {
                           d.newBuildOffset || 0,
                           d.newLoansPayable || 0,
                           d.newLoansOffset || 0,
-                          d.extraCashSavings || 0
-                        ))
+                          d.extraCashSavings || 0,
+                          Math.max(0, d.netDebt || 0)
+                        )),
+                        ...(finances.baselineSimulationData || []).map((d: any) => Math.max(0, d.netDebt || 0))
                       ) || 1200000;
 
-                      // Fix 2M as the absolute highest possible value for the y-axis (can go lower as it does now)
-                      const maxDataVal = Math.min(2000000, rawMaxDataVal);
+                      // Scalable maximum for the y-axis capped at $3M
+                      const maxDataVal = Math.min(3000000, rawMaxDataVal);
 
                       // Make clean rounding steps for cleaner lines
-                      const yStep = maxDataVal >= 2000000 ? 500000 : maxDataVal > 1000000 ? 250000 : maxDataVal > 500000 ? 200000 : 100000;
-                      const yMax = Math.ceil(maxDataVal / yStep) * yStep;
+                      const yStep = maxDataVal >= 2000000 ? 500000 : maxDataVal > 800000 ? 250000 : 200000;
+                      const yMax = Math.min(3000000, Math.ceil(maxDataVal / yStep) * yStep);
 
                       const yTicks = [];
                       for (let val = 0; val <= yMax; val += yStep) {
@@ -4418,6 +4502,8 @@ export default function App() {
                       let newLoansLoanPoints = "";
                       let newLoansOffsetPoints = "";
                       let extraSavingsPoints = "";
+                      let activeNetDebtPoints = "";
+                      let baselineNetDebtPoints = "";
 
                       finances.simulationData.forEach((d: any, idx: number) => {
                         const x = getX(idx);
@@ -4435,7 +4521,16 @@ export default function App() {
                         newLoansOffsetPoints += `${x.toFixed(2)},${getY(d.newLoansOffset || 0).toFixed(2)} `;
 
                         extraSavingsPoints += `${x.toFixed(2)},${getY(d.extraCashSavings || 0).toFixed(2)} `;
+
+                        activeNetDebtPoints += `${x.toFixed(2)},${getY(Math.max(0, d.netDebt || 0)).toFixed(2)} `;
                       });
+
+                      if (finances.baselineSimulationData) {
+                        finances.baselineSimulationData.forEach((bd: any, idx: number) => {
+                          const x = getX(idx);
+                          baselineNetDebtPoints += `${x.toFixed(2)},${getY(Math.max(0, bd.netDebt || 0)).toFixed(2)} `;
+                        });
+                      }
 
                       // We have exactly 30 years in simulation
                       const xTicks = [0, 5, 10, 15, 20, 25, 30];
@@ -4510,11 +4605,28 @@ export default function App() {
                             );
                           })}
 
+                          {/* Baseline Net Debt Trajectory (No Future Expense/Income) */}
+                          <polyline
+                            fill="none"
+                            stroke="#f43f5e"
+                            strokeWidth="2.5"
+                            strokeDasharray="6 4"
+                            points={baselineNetDebtPoints}
+                          />
+
+                          {/* Active Net Debt Trajectory (With Future Expense/Income) */}
+                          <polyline
+                            fill="none"
+                            stroke="#0d9488"
+                            strokeWidth="3"
+                            points={activeNetDebtPoints}
+                          />
+
                           {/* Forever Home Loan Line */}
                           <polyline
                             fill="none"
                             stroke="#6366f1"
-                            strokeWidth="2"
+                            strokeWidth="1.5"
                             points={fhLoanPoints}
                           />
 
@@ -4531,7 +4643,7 @@ export default function App() {
                           <polyline
                             fill="none"
                             stroke="#10b981"
-                            strokeWidth="2"
+                            strokeWidth="1.5"
                             points={fernLoanPoints}
                           />
 
@@ -4548,7 +4660,7 @@ export default function App() {
                           <polyline
                             fill="none"
                             stroke="#7e22ce"
-                            strokeWidth="2"
+                            strokeWidth="1.5"
                             points={newBuildLoanPoints}
                           />
 
@@ -4565,7 +4677,7 @@ export default function App() {
                           <polyline
                             fill="none"
                             stroke="#f59e0b"
-                            strokeWidth="2"
+                            strokeWidth="1.5"
                             points={newLoansLoanPoints}
                           />
 
@@ -4582,7 +4694,7 @@ export default function App() {
                           <polyline
                             fill="none"
                             stroke="#06b6d4"
-                            strokeWidth="1.5"
+                            strokeWidth="2"
                             strokeDasharray="4 3"
                             points={extraSavingsPoints}
                           />

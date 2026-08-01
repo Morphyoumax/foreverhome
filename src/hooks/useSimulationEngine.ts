@@ -117,17 +117,17 @@ export function useSimulationEngine({
       totalTransitionInterestPaulan + totalTransitionInterestFern;
 
     // Paulan Court Net proceeds of sale calculation with dynamic sale price
-    const paulanSale = inputs.paulanSalePrice ?? 740000;
+    const paulanSale = inputs.paulanSalePrice ?? 690000;
     const sellingCosts = paulanSale * 0.025; // 2.5% fixed commissions & legals
     const paulanNetProceeds = inputs.paulanStrategy === "rent"
       ? 0
       : Math.max(
           0,
-          paulanSale - ACCOUNT_BALANCES.paulansLoan - sellingCosts - (inputs.paulanRenoCost ?? 10000)
+          paulanSale - ACCOUNT_BALANCES.paulansLoan - sellingCosts - (inputs.paulanRenoCost ?? 5000)
         );
 
     // Meryl's Twin Ranges sale details with dynamic sale price
-    const merylGrossProceeds = inputs.merylSalePrice ?? 690000;
+    const merylGrossProceeds = inputs.merylSalePrice ?? 720000;
     const merylSellingFees = merylGrossProceeds * 0.025; // 2.5% standard commissions, marketing, conveyancing, legals
     const merylNetProceeds = Math.max(
       0,
@@ -148,7 +148,7 @@ export function useSimulationEngine({
     const paulanPrepPaid = inputs.paulanStrategy === "rent" ? (inputs.paulanRenoCost ?? 5000) : 0;
     const keptInOffsetAccount = Math.max(
       0,
-      totalCombinedPool - appliedToPrincipalReduction - (inputs.fhRenoMovingCost ?? 10000) - paulanPrepPaid
+      totalCombinedPool - appliedToPrincipalReduction - (inputs.fhRenoMovingCost ?? 5000) - paulanPrepPaid
     );
 
     // Post-Variation Stabilized Mortgage State
@@ -593,9 +593,85 @@ export function useSimulationEngine({
         const triggerWeek = Math.round(exp.timingYears * 52);
         if (w === triggerWeek) {
           if (exp.source === "offset_fh") {
-            simOffsetFH = Math.max(0, simOffsetFH - exp.amount);
+            let needed = exp.amount;
+            // 1. Draw from FH offset
+            const pullFH = Math.min(simOffsetFH, needed);
+            simOffsetFH -= pullFH;
+            needed -= pullFH;
+            // 2. Draw from extra cash savings
+            if (needed > 0) {
+              const pullExtra = Math.min(simExtraCashSavings, needed);
+              simExtraCashSavings -= pullExtra;
+              needed -= pullExtra;
+            }
+            // 3. Draw from Fern offset
+            if (needed > 0) {
+              const pullFern = Math.min(simOffsetFern, needed);
+              simOffsetFern -= pullFern;
+              needed -= pullFern;
+            }
+            // 4. Draw from New Build offset
+            if (needed > 0 && simOffsetNewBuild > 0) {
+              const pullNB = Math.min(simOffsetNewBuild, needed);
+              simOffsetNewBuild -= pullNB;
+              needed -= pullNB;
+            }
+            // 5. Unfunded balance becomes a new loan
+            if (needed > 0) {
+              const rLoanWeekly = rWeeklyFHSim;
+              const nLoanWeeks = 30 * 52;
+              const pmt = rLoanWeekly > 0 
+                ? (needed * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+                : 0;
+              activeNewLoans.push({
+                id: exp.id + "_unfunded",
+                amount: needed,
+                principal: needed,
+                weeklyPayment: pmt,
+                weekStarted: w,
+                offset: 0,
+              });
+            }
           } else if (exp.source === "offset_fern") {
-            simOffsetFern = Math.max(0, simOffsetFern - exp.amount);
+            let needed = exp.amount;
+            // 1. Draw from Fern offset
+            const pullFern = Math.min(simOffsetFern, needed);
+            simOffsetFern -= pullFern;
+            needed -= pullFern;
+            // 2. Draw from extra cash savings
+            if (needed > 0) {
+              const pullExtra = Math.min(simExtraCashSavings, needed);
+              simExtraCashSavings -= pullExtra;
+              needed -= pullExtra;
+            }
+            // 3. Draw from FH offset
+            if (needed > 0) {
+              const pullFH = Math.min(simOffsetFH, needed);
+              simOffsetFH -= pullFH;
+              needed -= pullFH;
+            }
+            // 4. Draw from New Build offset
+            if (needed > 0 && simOffsetNewBuild > 0) {
+              const pullNB = Math.min(simOffsetNewBuild, needed);
+              simOffsetNewBuild -= pullNB;
+              needed -= pullNB;
+            }
+            // 5. Unfunded balance becomes a new loan
+            if (needed > 0) {
+              const rLoanWeekly = rWeeklyFHSim;
+              const nLoanWeeks = 30 * 52;
+              const pmt = rLoanWeekly > 0 
+                ? (needed * rLoanWeekly * Math.pow(1 + rLoanWeekly, nLoanWeeks)) / (Math.pow(1 + rLoanWeekly, nLoanWeeks) - 1)
+                : 0;
+              activeNewLoans.push({
+                id: exp.id + "_unfunded",
+                amount: needed,
+                principal: needed,
+                weeklyPayment: pmt,
+                weekStarted: w,
+                offset: 0,
+              });
+            }
           } else if (exp.source === "new_loan") {
             // New loan P&I over standard 30-year term
             const rLoanWeekly = rWeeklyFHSim;
@@ -1277,7 +1353,7 @@ export function useSimulationEngine({
       }
       if (fhOpened) {
         fhOffsetRaw += savingsAccumulated;
-        fhOffsetRaw -= (inputs.fhRenoMovingCost ?? 10000);
+        fhOffsetRaw -= (inputs.fhRenoMovingCost ?? 5000);
       }
 
       const fhOffsetCurrent = Math.min(currFHLoan, Math.max(0, fhOffsetRaw));

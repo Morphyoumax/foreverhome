@@ -12,14 +12,14 @@ export const ACCOUNT_BALANCES = {
 
 export const DEFAULT_INPUTS: PropertyInputs = {
   purchasePrice: 1070000,          // Default Forever Home purchase price
-  paulanSalePrice: 740000,         // Locked Paulan Court purchase/sale price
-  merylSalePrice: 690000,          // Twin Ranges gross sale price
-  merylContribution: 672750,       // Meryl's Granny Flat cash injection (post-settlement)
+  paulanSalePrice: 690000,         // Paulan Court estimated property value
+  merylSalePrice: 720000,          // Twin Ranges gross sale price ($720k)
+  merylContribution: 700000,       // Meryl's Granny Flat cash injection ($700k)
   paulanOffsetPulled: 377965.85,    // Programmatic (read-only indicator fallback)
   fernOffsetPulled: 220000.00,      // Programmatic (read-only indicator fallback)
   offsetBuffer: 250000,            // Day 1 target minimum safety cushion buffer
   weeklySavings: 0,                // Extra savings allocated to offset weekly
-  interestRate: 6.05,              // Variable loan rate
+  interestRate: 6.03,              // Variable loan rate
   
   // Parallel timeline delays
   merylStartDelay: 0,              // Timeline start
@@ -28,14 +28,14 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   merylSettleDays: 60,             // Twin Ranges settlement period
   
   fhStartDelay: 0,                 // Starts from Start
-  fhSettleDays: 74,                // Settlement on Forever Home (runs to 18/09/26)
-  renoDays: 3,                     // Renovation period
-  moveDays: 10,                    // Move-in duration
+  fhSettleDays: 53,                // Settlement on Forever Home (finishes 28/08/26)
+  renoDays: 7,                     // Renovation period (7 days)
+  moveDays: 7,                     // Move-in duration (7 days)
   
-  paulanStartDelay: 139,           // Shifted to start immediately after the move event in Swimlane B concludes
-  paulanPrepDays: 7,               // Paulan prep duration
-  paulanCampaignDays: 28,          // Paulan marketing
-  paulanSettleDays: 60,            // Settlement period on selling Paulan Court
+  paulanStartDelay: 67,            // Shifted to start immediately after the move event in Swimlane B concludes (11/09/26)
+  paulanPrepDays: 0,               // Staging & styling duration (0 days)
+  paulanCampaignDays: 0,           // Paulan marketing (0 days)
+  paulanSettleDays: 21,            // Settlement period on selling Paulan Court (finishes 02/10/26)
   
   internalVariationPct: 100,       // 0% = Keep all post-sale cash in Offset, 100% = Pay down Loan Principal (Recast)
   depletionPriorityToggle: "paulan", // Default priority
@@ -48,7 +48,7 @@ export const DEFAULT_INPUTS: PropertyInputs = {
   gfiStartOffset: 1,               // GFI default scheduled offset is 1 day after Twin Ranges settlement finalizes
   merylRenoCost: 0,
   paulanRenoCost: 5000,
-  fhRenoMovingCost: 10000,
+  fhRenoMovingCost: 5000,
   paulanStrategy: "sell",
   paulanWeeklyRent: 650,
   paulanWeeklyExpenses: 120,
@@ -71,14 +71,14 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
   const minCashRequiredForSettlement = Math.max(0, totalAcquisitionCost - 1500000);
 
   // Dynamic merylNetProceeds clamping
-  const merylSale = newInputs.merylSalePrice ?? 690000;
+  const merylSale = newInputs.merylSalePrice ?? 720000;
   const merylNet = Math.max(0, merylSale - (merylSale * 0.025) - (newInputs.merylRenoCost ?? 0));
-  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 672750));
+  const merylContribution = Math.min(merylNet, Math.max(0, newInputs.merylContribution ?? 700000));
 
   // Check if GFI occurs before or on Forever Home Settlement based on schedule inputs
   const merylSettleEnd = (newInputs.merylStartDelay ?? 0) + (newInputs.merylPrepDays ?? 40) + (newInputs.merylCampaignDays ?? 45) + (newInputs.merylSettleDays ?? 60);
   const gfiStart = merylSettleEnd + (newInputs.gfiStartOffset ?? 1);
-  const fhSettleEnd = (newInputs.fhStartDelay ?? 0) + (newInputs.fhSettleDays ?? 74);
+  const fhSettleEnd = (newInputs.fhStartDelay ?? 0) + (newInputs.fhSettleDays ?? 53);
   const gfiBeforeFHSettle = gfiStart <= fhSettleEnd;
 
   const startingCashAtFHSettle = 619830 + (gfiBeforeFHSettle ? merylContribution : 0);
@@ -100,7 +100,7 @@ export const adjustInputs = (newInputs: PropertyInputs): PropertyInputs => {
     gfiStartOffset: newInputs.gfiStartOffset ?? 1,
     merylRenoCost: newInputs.merylRenoCost ?? 0,
     paulanRenoCost: newInputs.paulanRenoCost ?? 5000,
-    fhRenoMovingCost: newInputs.fhRenoMovingCost ?? 10000,
+    fhRenoMovingCost: newInputs.fhRenoMovingCost ?? 5000,
     paulanStrategy: newInputs.paulanStrategy ?? "sell",
     paulanWeeklyRent: newInputs.paulanWeeklyRent ?? 650,
     paulanWeeklyExpenses: newInputs.paulanWeeklyExpenses ?? 120,

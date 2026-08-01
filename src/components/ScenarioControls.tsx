@@ -291,33 +291,35 @@ export function ScenarioControls({
 
           {/* COLUMN 3: Variable Interest Rate & Sourcing Waterfall Priority */}
           <div className="space-y-4">
-            <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">
-              <div className="flex justify-between text-xs font-semibold">
+            <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-2">
+              <div className="flex justify-between items-center text-xs font-semibold">
                 <span className="text-stone-700 font-serif">
                   Variable Interest Rate
                 </span>
-                <span className="text-blue-900 font-bold font-mono">
-                  {inputs.interestRate}% p.a.
+                <span className="text-blue-900 font-bold font-mono text-[11px]">
+                  p.a.
                 </span>
               </div>
-              <input
-                type="range"
-                min={4.0}
-                max={12.15}
-                step={0.05}
-                value={inputs.interestRate}
-                onChange={(e) =>
-                  handleInputChange(
-                    "interestRate",
-                    parseFloat(e.target.value)
-                  )
-                }
-                className="w-full accent-blue-900 cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-stone-400">
-                <span>4.0%</span>
-                <span>12.15% p.a.</span>
+              <div className="relative flex items-center">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="30"
+                  value={inputs.interestRate}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    handleInputChange("interestRate", isNaN(val) ? 0 : val);
+                  }}
+                  className="w-full px-3 py-2 pr-12 text-sm font-mono font-bold text-blue-900 bg-white border border-stone-300 rounded-lg focus:ring-2 focus:ring-blue-800 focus:outline-none"
+                />
+                <span className="absolute right-3 text-xs font-serif font-semibold text-stone-500 pointer-events-none">
+                  % p.a.
+                </span>
               </div>
+              <p className="text-[10px] text-stone-400 font-serif">
+                Applied across variable loan facilities and interest calculations.
+              </p>
             </div>
 
             <div className="p-4 bg-stone-50/70 rounded-xl border border-stone-200 space-y-3">

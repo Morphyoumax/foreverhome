@@ -67,29 +67,29 @@ export function TimelineView({
               merylCampaignDays: sc.inputs.merylCampaignDays ?? 30,
               merylSettleDays: sc.inputs.merylSettleDays ?? 60,
               fhStartDelay: sc.inputs.fhStartDelay ?? 0,
-              fhSettleDays: sc.inputs.fhSettleDays ?? 74,
-              renoDays: sc.inputs.renoDays ?? 3,
-              moveDays: sc.inputs.moveDays ?? 10,
-              paulanStartDelay: sc.inputs.paulanStartDelay ?? 139,
-              paulanPrepDays: sc.inputs.paulanPrepDays ?? 14,
-              paulanCampaignDays: sc.inputs.paulanCampaignDays ?? 28,
-              paulanSettleDays: sc.inputs.paulanSettleDays ?? 42,
+              fhSettleDays: sc.inputs.fhSettleDays ?? 53,
+              renoDays: sc.inputs.renoDays ?? 7,
+              moveDays: sc.inputs.moveDays ?? 7,
+              paulanStartDelay: sc.inputs.paulanStartDelay ?? 67,
+              paulanPrepDays: sc.inputs.paulanPrepDays ?? 0,
+              paulanCampaignDays: sc.inputs.paulanCampaignDays ?? 0,
+              paulanSettleDays: sc.inputs.paulanSettleDays ?? 21,
               merylRentingExtraDays: sc.inputs.merylRentingExtraDays ?? 14,
               gfiStartOffset: sc.inputs.gfiStartOffset ?? 30,
               merylRentStartOffset: sc.inputs.merylRentStartOffset ?? 0,
               purchasePrice: sc.inputs.purchasePrice ?? 1070000,
               stampDutyRate: sc.inputs.stampDutyRate ?? 5.5,
-              interestRate: sc.inputs.interestRate ?? 6.05,
+              interestRate: sc.inputs.interestRate ?? 6.03,
               weeklySavings: sc.inputs.weeklySavings ?? 1750,
               depletionPriorityToggle: sc.inputs.depletionPriorityToggle ?? "paulan",
               offsetBuffer: sc.inputs.offsetBuffer ?? 50000,
-              paulanSalePrice: sc.inputs.paulanSalePrice ?? 740000,
-              paulanRenoCost: sc.inputs.paulanRenoCost ?? 10000,
-              merylSalePrice: sc.inputs.merylSalePrice ?? 690000,
+              paulanSalePrice: sc.inputs.paulanSalePrice ?? 690000,
+              paulanRenoCost: sc.inputs.paulanRenoCost ?? 5000,
+              merylSalePrice: sc.inputs.merylSalePrice ?? 720000,
               merylRenoCost: sc.inputs.merylRenoCost ?? 0,
-              merylContribution: sc.inputs.merylContribution ?? 672750,
+              merylContribution: sc.inputs.merylContribution ?? 700000,
               internalVariationPct: sc.inputs.internalVariationPct ?? 100,
-              fhRenoMovingCost: sc.inputs.fhRenoMovingCost ?? 10000,
+              fhRenoMovingCost: sc.inputs.fhRenoMovingCost ?? 5000,
               recastTriggerEvent: sc.inputs.recastTriggerEvent ?? "gfi",
               merylRentCostPerWeek: sc.inputs.merylRentCostPerWeek ?? 650,
               paulanOffsetPulled: sc.inputs.paulanOffsetPulled ?? 377965.85,
@@ -114,29 +114,29 @@ export function TimelineView({
           merylCampaignDays: 30,
           merylSettleDays: 60,
           fhStartDelay: 0,
-          fhSettleDays: 74,
-          renoDays: 3,
-          moveDays: 10,
-          paulanStartDelay: 139,
-          paulanPrepDays: 14,
-          paulanCampaignDays: 28,
-          paulanSettleDays: 42,
+          fhSettleDays: 53,
+          renoDays: 7,
+          moveDays: 7,
+          paulanStartDelay: 67,
+          paulanPrepDays: 0,
+          paulanCampaignDays: 0,
+          paulanSettleDays: 21,
           merylRentingExtraDays: 14,
           gfiStartOffset: 30,
           merylRentStartOffset: 0,
           purchasePrice: 1070000,
           stampDutyRate: 5.5,
-          interestRate: 6.05,
+          interestRate: 6.03,
           weeklySavings: 1750,
           depletionPriorityToggle: "paulan",
           offsetBuffer: 50000,
-          paulanSalePrice: 740000,
-          paulanRenoCost: 10000,
-          merylSalePrice: 690000,
+          paulanSalePrice: 690000,
+          paulanRenoCost: 5000,
+          merylSalePrice: 720000,
           merylRenoCost: 0,
-          merylContribution: 672750,
+          merylContribution: 700000,
           internalVariationPct: 100,
-          fhRenoMovingCost: 10000,
+          fhRenoMovingCost: 5000,
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
           paulanOffsetPulled: 377965.85,
@@ -155,29 +155,29 @@ export function TimelineView({
           merylCampaignDays: 30,
           merylSettleDays: 60,
           fhStartDelay: 0,
-          fhSettleDays: 74,
-          renoDays: 3,
-          moveDays: 10,
-          paulanStartDelay: 139,
-          paulanPrepDays: 14,
-          paulanCampaignDays: 28,
-          paulanSettleDays: 42,
+          fhSettleDays: 53,
+          renoDays: 7,
+          moveDays: 7,
+          paulanStartDelay: 67,
+          paulanPrepDays: 0,
+          paulanCampaignDays: 0,
+          paulanSettleDays: 21,
           merylRentingExtraDays: 14,
           gfiStartOffset: 30,
           merylRentStartOffset: 0,
           purchasePrice: 1070000,
           stampDutyRate: 5.5,
-          interestRate: 6.05,
+          interestRate: 6.03,
           weeklySavings: 1750,
           depletionPriorityToggle: "paulan",
           offsetBuffer: 50000,
-          paulanSalePrice: 740000,
-          paulanRenoCost: 10000,
-          merylSalePrice: 690000,
+          paulanSalePrice: 690000,
+          paulanRenoCost: 5000,
+          merylSalePrice: 720000,
           merylRenoCost: 0,
-          merylContribution: 672750,
+          merylContribution: 700000,
           internalVariationPct: 100,
-          fhRenoMovingCost: 10000,
+          fhRenoMovingCost: 5000,
           recastTriggerEvent: "gfi",
           merylRentCostPerWeek: 650,
           paulanOffsetPulled: 377965.85,
@@ -285,21 +285,21 @@ export function TimelineView({
           };
         } else if (field === "moveDays") {
           const proposedReno = Math.max(0, Math.min(90, vals.renoDays + deltaDays));
-          const proposedMove = Math.max(1, Math.min(30, vals.moveDays - deltaDays));
+          const proposedMove = Math.max(0, Math.min(30, vals.moveDays - deltaDays));
           updates = {
             renoDays: proposedReno,
             moveDays: proposedMove,
           };
         } else if (field === "paulanCampaignDays") {
-          const proposedPrep = Math.max(1, Math.min(60, vals.paulanPrepDays + deltaDays));
-          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays - deltaDays));
+          const proposedPrep = Math.max(0, Math.min(60, vals.paulanPrepDays + deltaDays));
+          const proposedCampaign = Math.max(0, Math.min(90, vals.paulanCampaignDays - deltaDays));
           updates = {
             paulanPrepDays: proposedPrep,
             paulanCampaignDays: proposedCampaign,
           };
         } else if (field === "paulanSettleDays") {
-          const proposedCampaign = Math.max(7, Math.min(90, vals.paulanCampaignDays + deltaDays));
-          const proposedSettle = Math.max(14, Math.min(120, vals.paulanSettleDays - deltaDays));
+          const proposedCampaign = Math.max(0, Math.min(90, vals.paulanCampaignDays + deltaDays));
+          const proposedSettle = Math.max(0, Math.min(120, vals.paulanSettleDays - deltaDays));
           updates = {
             paulanCampaignDays: proposedCampaign,
             paulanSettleDays: proposedSettle,
@@ -322,10 +322,10 @@ export function TimelineView({
           if (field === "merylSettleDays") newVal = Math.max(14, Math.min(120, newVal));
           if (field === "fhSettleDays") newVal = Math.max(14, Math.min(120, newVal));
           if (field === "renoDays") newVal = Math.max(0, Math.min(90, newVal));
-          if (field === "moveDays") newVal = Math.max(1, Math.min(30, newVal));
-          if (field === "paulanPrepDays") newVal = Math.max(1, Math.min(60, newVal));
-          if (field === "paulanCampaignDays") newVal = Math.max(7, Math.min(90, newVal));
-          if (field === "paulanSettleDays") newVal = Math.max(14, Math.min(120, newVal));
+          if (field === "moveDays") newVal = Math.max(0, Math.min(30, newVal));
+          if (field === "paulanPrepDays") newVal = Math.max(0, Math.min(60, newVal));
+          if (field === "paulanCampaignDays") newVal = Math.max(0, Math.min(90, newVal));
+          if (field === "paulanSettleDays") newVal = Math.max(0, Math.min(120, newVal));
           if (field === "merylRentingExtraDays") newVal = Math.max(0, Math.min(365, newVal));
         } else {
           newVal = Math.max(0, Math.min(250, newVal));
