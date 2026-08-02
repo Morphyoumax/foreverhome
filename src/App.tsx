@@ -371,16 +371,16 @@ export default function App() {
   // New Build State Hooks
   const [newBuildSpend, setNewBuildSpend] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_new_build_spend");
+      const saved = localStorage.getItem("property_scenarios_v12_new_build_spend");
       if (saved) return parseInt(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
-    return 350000;
+    return 1200000;
   });
   const [newBuildTiming, setNewBuildTiming] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_new_build_timing");
+      const saved = localStorage.getItem("property_scenarios_v12_new_build_timing");
       if (saved) return parseFloat(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
@@ -389,26 +389,26 @@ export default function App() {
   });
   const [newBuildBuffer, setNewBuildBuffer] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_new_build_buffer");
+      const saved = localStorage.getItem("property_scenarios_v12_new_build_buffer");
       if (saved) return parseInt(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
-    return 50000;
+    return 200000;
   });
   const [newBuildDrawChoicePct, setNewBuildDrawChoicePct] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_new_build_draw_choice_pct");
+      const saved = localStorage.getItem("property_scenarios_v12_new_build_draw_choice_pct");
       if (saved) return parseInt(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
-    return 50;
+    return 100;
   });
 
   const [newBuildPostWeeklySavingsOverride, setNewBuildPostWeeklySavingsOverride] = useState<number | null>(() => {
     try {
-      const saved = localStorage.getItem("property_scenarios_v10_new_build_post_weekly_savings_override");
+      const saved = localStorage.getItem("property_scenarios_v12_new_build_post_weekly_savings_override");
       if (saved && saved !== "null") return parseInt(saved);
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
@@ -419,9 +419,9 @@ export default function App() {
   useEffect(() => {
     try {
       if (newBuildPostWeeklySavingsOverride === null) {
-        localStorage.removeItem("property_scenarios_v10_new_build_post_weekly_savings_override");
+        localStorage.removeItem("property_scenarios_v12_new_build_post_weekly_savings_override");
       } else {
-        localStorage.setItem("property_scenarios_v10_new_build_post_weekly_savings_override", newBuildPostWeeklySavingsOverride.toString());
+        localStorage.setItem("property_scenarios_v12_new_build_post_weekly_savings_override", newBuildPostWeeklySavingsOverride.toString());
       }
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
@@ -430,7 +430,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_new_build_spend", newBuildSpend.toString());
+      localStorage.setItem("property_scenarios_v12_new_build_spend", newBuildSpend.toString());
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -438,7 +438,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_new_build_timing", newBuildTiming.toString());
+      localStorage.setItem("property_scenarios_v12_new_build_timing", newBuildTiming.toString());
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -446,7 +446,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_new_build_buffer", newBuildBuffer.toString());
+      localStorage.setItem("property_scenarios_v12_new_build_buffer", newBuildBuffer.toString());
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -454,7 +454,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("property_scenarios_v10_new_build_draw_choice_pct", newBuildDrawChoicePct.toString());
+      localStorage.setItem("property_scenarios_v12_new_build_draw_choice_pct", newBuildDrawChoicePct.toString());
     } catch (e) {
       console.warn("Storage exception handled cleanly.", e);
     }
@@ -3765,7 +3765,7 @@ export default function App() {
                         <span>$2.5M</span>
                       </div>
                       <div className="flex gap-1.5 flex-wrap pt-0.5">
-                        {[250000, 500000, 1000000, 1500000, 2000000, 2500000].map((val) => (
+                        {[250000, 500000, 1000000, 1200000, 1500000, 2000000, 2500000].map((val) => (
                           <button
                             key={val}
                             onClick={() => setNewBuildSpend(val)}
@@ -3775,7 +3775,7 @@ export default function App() {
                                 : "bg-white text-stone-600 hover:bg-stone-50 border-stone-200"
                             }`}
                           >
-                            ${(val / 1000).toFixed(0)}k
+                            {val >= 1000000 ? `$${(val / 1000000).toFixed(val % 1000000 === 0 ? 0 : 1)}M` : `$${(val / 1000).toFixed(0)}k`}
                           </button>
                         ))}
                       </div>
@@ -4478,12 +4478,12 @@ export default function App() {
                         ...(finances.baselineSimulationData || []).map((d: any) => Math.max(0, d.netDebt || 0))
                       ) || 1200000;
 
-                      // Scalable maximum for the y-axis capped at $3M
-                      const maxDataVal = Math.min(3000000, rawMaxDataVal);
+                      // Scalable maximum for the y-axis capped at $2M
+                      const maxDataVal = Math.min(2000000, rawMaxDataVal);
 
                       // Make clean rounding steps for cleaner lines
-                      const yStep = maxDataVal >= 2000000 ? 500000 : maxDataVal > 800000 ? 250000 : 200000;
-                      const yMax = Math.min(3000000, Math.ceil(maxDataVal / yStep) * yStep);
+                      const yStep = maxDataVal >= 1500000 ? 500000 : maxDataVal > 800000 ? 250000 : 200000;
+                      const yMax = Math.min(2000000, Math.ceil(maxDataVal / yStep) * yStep);
 
                       const yTicks = [];
                       for (let val = 0; val <= yMax; val += yStep) {

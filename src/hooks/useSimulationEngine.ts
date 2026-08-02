@@ -737,7 +737,7 @@ export function useSimulationEngine({
 
       // Process New Build spending drawdown event at exact week
       if (w === w_build) {
-        let liquidOffsetAtBuildVal = simExtraCashSavings + simOffsetFH + simOffsetFern + simOffsetPaulan;
+        liquidOffsetAtBuildVal = simExtraCashSavings + simOffsetFH + simOffsetFern + simOffsetPaulan;
         activeNewLoans.forEach((l) => { liquidOffsetAtBuildVal += l.offset; });
 
         const availableOffsets = Math.max(0, liquidOffsetAtBuildVal - newBuildBuffer);
