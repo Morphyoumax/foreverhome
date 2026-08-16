@@ -2,8 +2,6 @@ import { useMemo } from "react";
 import { PropertyInputs, SimulationDataPoint, FutureExpense, FutureIncome } from "../types";
 import { ACCOUNT_BALANCES } from "../constants/defaults";
 
-const WeeklyNetSalary = 5303.35; // Locked family salary split
-
 // Helper function to calculate a calendar date from a day offset
 const getGanttDateStr = (days: number) => {
   const d = new Date(2026, 6, 6); // July 6, 2026
@@ -35,6 +33,8 @@ export function useSimulationEngine({
   newBuildPostWeeklySavingsOverride,
 }: UseSimulationEngineParams) {
   return useMemo(() => {
+    const WeeklyNetSalary = inputs.weeklyIncome ?? 5303.35;
+
     // Dynamically selected purchase cost calculation, default is Victoria 5.5%
     const rate = (inputs.stampDutyRate ?? 5.5) / 100;
     const stampDuty = inputs.purchasePrice * rate;
@@ -774,7 +774,7 @@ export function useSimulationEngine({
         const totalActiveExtraWeeklyIncomeAtBuild = activeExtraIncomesAtBuild.reduce((sum, inc) => {
           return sum + (inc.annualAmount * 0.85) / 52;
         }, 0);
-        const totalWeeklyNetIncomeAtBuild = 5303.35 + totalActiveExtraWeeklyIncomeAtBuild;
+        const totalWeeklyNetIncomeAtBuild = WeeklyNetSalary + totalActiveExtraWeeklyIncomeAtBuild;
 
         const isFHPaidOffByBuild = fhPaidOffWeek !== -1 && w_build >= fhPaidOffWeek;
         const isFernPaidOffByBuild = fernPaidOffWeek !== -1 && w_build >= fernPaidOffWeek;

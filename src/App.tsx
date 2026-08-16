@@ -462,7 +462,7 @@ export default function App() {
 
 
 
-  const WeeklyNetSalary = 5303.35; // Locked family salary split
+  const WeeklyNetSalary = inputs.weeklyIncome ?? 5303.35; // Family weekly salary inflow
 
   useEffect(() => {
     try {
@@ -631,29 +631,37 @@ export default function App() {
   const handleInputChange = (field: keyof PropertyInputs, value: any) => {
     setInputs((prev) => {
       const next = { ...prev, [field]: value };
+      const currentIncome = next.weeklyIncome ?? prev.weeklyIncome ?? 5303.35;
 
-      if (field === "useFixedDiscretionary") {
+      if (field === "weeklyIncome") {
+        const totalOutlays = finances.totalCommittedWeeklyOutlays;
+        if (prev.useFixedDiscretionary) {
+          next.weeklySavings = Math.max(0, Math.round(currentIncome - totalOutlays - (prev.fixedDiscretionaryCash ?? 3000)));
+        } else {
+          next.fixedDiscretionaryCash = Math.max(0, Math.round(currentIncome - totalOutlays - prev.weeklySavings));
+        }
+      } else if (field === "useFixedDiscretionary") {
         if (value === true) {
           // Switching to Fixed Discretionary Cash:
           // Initialize fixedDiscretionaryCash to current leftoverDiscretionaryCash
           const totalOutlays = finances.totalCommittedWeeklyOutlays;
-          const currentLeftover = Math.max(0, 5303.35 - totalOutlays - prev.weeklySavings);
+          const currentLeftover = Math.max(0, currentIncome - totalOutlays - prev.weeklySavings);
           next.fixedDiscretionaryCash = Math.round(currentLeftover);
         } else {
           // Switching to Weekly Extra Savings:
           // Initialize weeklySavings to current effectiveWeeklySavings
           const totalOutlays = finances.totalCommittedWeeklyOutlays;
-          const currentSavings = Math.max(0, 5303.35 - totalOutlays - (prev.fixedDiscretionaryCash ?? 3000));
+          const currentSavings = Math.max(0, currentIncome - totalOutlays - (prev.fixedDiscretionaryCash ?? 3000));
           next.weeklySavings = Math.round(currentSavings);
         }
       } else if (field === "weeklySavings" && prev.useFixedDiscretionary) {
         // In fixed discretionary mode, modifying weeklySavings directly also updates fixedDiscretionaryCash
         const totalOutlays = finances.totalCommittedWeeklyOutlays;
-        next.fixedDiscretionaryCash = Math.max(0, Math.round(5303.35 - totalOutlays - value));
+        next.fixedDiscretionaryCash = Math.max(0, Math.round(currentIncome - totalOutlays - value));
       } else if (field === "fixedDiscretionaryCash") {
         // Modifying fixedDiscretionaryCash updates weeklySavings
         const totalOutlays = finances.totalCommittedWeeklyOutlays;
-        next.weeklySavings = Math.max(0, Math.round(5303.35 - totalOutlays - value));
+        next.weeklySavings = Math.max(0, Math.round(currentIncome - totalOutlays - value));
       } else if (field === "usePostBuildFixedDiscretionary") {
         if (value === true) {
           // Switching to Fixed Post-Build Discretionary Cash:
@@ -1312,7 +1320,7 @@ export default function App() {
                       <input
                         type="range"
                         min={0}
-                        max={Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays))}
+                        max={Math.max(3000, Math.floor((inputs.weeklyIncome ?? 5303.35) - finances.totalCommittedWeeklyOutlays))}
                         step={50}
                         value={inputs.fixedDiscretionaryCash ?? 3000}
                         onChange={(e) =>
@@ -1322,7 +1330,7 @@ export default function App() {
                       />
                       <div className="flex justify-between text-[9px] text-stone-400 font-mono">
                         <span>Min: $0/wk</span>
-                        <span>Max: ${Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk</span>
+                        <span>Max: ${Math.max(3000, Math.floor((inputs.weeklyIncome ?? 5303.35) - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk</span>
                       </div>
                       <div className="text-[9px] text-indigo-600 italic font-sans mt-1">
                         Derived Savings: ${Math.round(finances.effectiveWeeklySavings)}/wk
@@ -2141,14 +2149,23 @@ export default function App() {
               </div>
 
               <div className="space-y-3.5 text-xs font-serif">
-                <div className="flex justify-between items-center text-stone-600 border-b border-stone-100 pb-1.5">
-                  <span>Gross Weekly Income Inflow:</span>
-                  <span className="font-semibold text-emerald-700 font-mono text-sm border-0 bg-transparent text-right">
-                    +$
-                    {WeeklyNetSalary.toLocaleString("en-AU", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
+                <div className="flex justify-between items-center text-stone-600 border-b border-stone-100 pb-1.5 gap-2">
+                  <span className="font-medium text-stone-700">Gross Weekly Income Inflow:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="font-bold text-emerald-700 font-mono text-xs">+$</span>
+                    <input
+                      type="number"
+                      step="50"
+                      min="0"
+                      value={inputs.weeklyIncome ?? 5303.35}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        handleInputChange("weeklyIncome", isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-28 px-2 py-1 text-right border border-stone-200 hover:border-emerald-500 focus:border-emerald-700 rounded font-mono text-emerald-800 font-bold text-xs bg-stone-50 focus:bg-white focus:outline-none transition-all shadow-xs"
+                    />
+                    <span className="text-[11px] text-stone-400 font-mono">/wk</span>
+                  </div>
                 </div>
                 <div className="flex justify-between items-center text-stone-600 border-b border-stone-100 pb-1.5">
                   <span>Forever Home P&I Repay (Dynamic Recast):</span>
@@ -2250,7 +2267,7 @@ export default function App() {
                       <input
                         type="range"
                         min={0}
-                        max={Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays))}
+                        max={Math.max(3000, Math.floor((inputs.weeklyIncome ?? 5303.35) - finances.totalCommittedWeeklyOutlays))}
                         step={50}
                         value={inputs.fixedDiscretionaryCash ?? 3000}
                         onChange={(e) =>
@@ -2261,7 +2278,7 @@ export default function App() {
                       
                       <div className="flex justify-between text-[9px] text-stone-400">
                         <span>$0 min</span>
-                        <span>${Math.max(3000, Math.floor(5303.35 - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk cap</span>
+                        <span>${Math.max(3000, Math.floor((inputs.weeklyIncome ?? 5303.35) - finances.totalCommittedWeeklyOutlays)).toLocaleString()}/wk cap</span>
                       </div>
                     </div>
                   )}
@@ -3966,7 +3983,7 @@ export default function App() {
                   const totalActiveExtraWeeklyIncome = activeExtraIncomes.reduce((sum, inc) => {
                     return sum + (inc.annualAmount * 0.85) / 52;
                   }, 0);
-                  const baseWages = 5303.35;
+                  const baseWages = inputs.weeklyIncome ?? 5303.35;
                   const totalWeeklyNetIncome = baseWages + totalActiveExtraWeeklyIncome;
 
                   // 2. Weekly Outflow Calculations

@@ -38,6 +38,7 @@ export interface PropertyInputs {
   paulanStrategy?: "sell" | "rent";
   paulanWeeklyRent?: number;
   paulanWeeklyExpenses?: number;
+  weeklyIncome?: number;
   annualInflationRate?: number;
   paulanSellLater?: boolean;
   paulanYearsBeforeSale?: number;
